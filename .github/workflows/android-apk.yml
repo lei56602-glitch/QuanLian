@@ -32,6 +32,15 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/reports/lint-results-debug.html
           if-no-files-found: error
+      - name: Diagnose release signing secrets (values are never printed)
+        run: |
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_KEYSTORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -n "${!name}" ]; then
+              echo "$name: present"
+            else
+              echo "$name: MISSING"
+            fi
+          done
       - name: Prepare release signing key
         if: ${{ env.RELEASE_KEYSTORE_BASE64 != '' }}
         env:
