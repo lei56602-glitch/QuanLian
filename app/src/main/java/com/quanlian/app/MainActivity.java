@@ -13,6 +13,7 @@ import android.content.ContentValues;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.text.SimpleDateFormat;
@@ -53,7 +54,7 @@ public class MainActivity extends Activity {
  private Button btn(String s,int c){Button b=new Button(this);b.setText(s);b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
  private void install(LinearLayout l){int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);ScrollView s=new ScrollView(this);s.setFillViewport(true);s.setFocusable(false);if(widthDp>=700){FrameLayout frame=new FrameLayout(this);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.min(widthDp,1200)*((int)getResources().getDisplayMetrics().density),-1,Gravity.CENTER);s.addView(l,new ScrollView.LayoutParams(-1,-2));frame.addView(s,p);setContentView(frame);}else{s.addView(l);setContentView(s);}if(widthDp>=700){l.setPadding(dp(32),dp(28),dp(32),dp(28));}l.post(()->{ArrayList<View> focusables=l.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty()&&!focusables.get(0).hasFocus())focusables.get(0).requestFocus();});}
  private void header(LinearLayout l,String title,String sub){TextView back=txt("‹  返回首页",15,0xffa0c3e6,true);back.setPadding(0,0,0,dp(18));back.setOnClickListener(v->home());l.addView(back);l.addView(txt(title,25,-1,true));gap(l,6);l.addView(txt(sub,14,0xffabc6e4,false));gap(l,20);}
- private String myName(){String m=android.os.Build.MODEL;if(m==null||m.trim().isEmpty())m="Android";return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","");}
+ private String myName(){String m=android.os.Build.MODEL;if(m==null||m.trim().isEmpty())m="Android";String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(0xff0a1428);getWindow().setNavigationBarColor(0xff0a1428);nsd=(NsdManager)getSystemService(NSD_SERVICE);requestNotificationPermissionIfNeeded();if(b!=null){try{ArrayList<android.os.Parcelable> saved=b.getParcelableArrayList("selected_uris");if(saved!=null)for(android.os.Parcelable item:saved)if(item instanceof Uri)uris.add((Uri)item);ArrayList<String> savedNames=b.getStringArrayList("selected_names");if(savedNames!=null)names.addAll(savedNames);ArrayList<Long> savedSizes=(ArrayList<Long>)b.getSerializable("selected_sizes");if(savedSizes!=null)sizes.addAll(savedSizes);page=b.getInt("current_page",0);}catch(Exception ignored){page=0;}}startLan();restorePage();}
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
  private void restorePage(){switch(page){case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;default:home();}}
@@ -93,15 +94,34 @@ public class MainActivity extends Activity {
   registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){discover();}public void onRegistrationFailed(NsdServiceInfo s,int e){runOnUiThread(()->Toast.makeText(MainActivity.this,"设备广播失败",Toast.LENGTH_SHORT).show());}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
   try{nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);}catch(Exception ignored){}
  }
+ private boolean isQuanLianService(String serviceType){
+  return serviceType!=null && serviceType.toLowerCase(Locale.US).startsWith(TYPE);
+ }
  private void discover(){
-  if(discovery!=null)return;
-  discovery=new NsdManager.DiscoveryListener(){
+  if(discovery!=null||!alive||nsd==null)return;
+  NsdManager.DiscoveryListener listener=new NsdManager.DiscoveryListener(){
    public void onDiscoveryStarted(String t){}
-   public void onServiceFound(NsdServiceInfo s){if(!TYPE.equals(s.getServiceType())||myName().equals(s.getServiceName()))return;try{nsd.resolveService(s,new NsdManager.ResolveListener(){public void onResolveFailed(NsdServiceInfo x,int e){}public void onServiceResolved(NsdServiceInfo x){InetAddress chosen=x.getHost();if(Build.VERSION.SDK_INT>=34){try{for(InetAddress candidate:x.getHostAddresses()){if(candidate instanceof Inet4Address){chosen=candidate;break;}}}catch(Exception ignored){}}if(!(chosen instanceof Inet4Address)){try{WifiManager wm=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);int ip=wm.getConnectionInfo().getIpAddress();if(ip!=0)chosen=InetAddress.getByAddress(new byte[]{(byte)(ip&255),(byte)((ip>>8)&255),(byte)((ip>>16)&255),(byte)((ip>>24)&255)});}catch(Exception ignored){}}Device d=new Device(x.getServiceName(),x.getServiceName(),chosen,x.getPort());synchronized(devices){devices.put(d.key,d);}runOnUiThread(()->refreshDevices());}});}catch(Exception ignored){}}
-   public void onServiceLost(NsdServiceInfo s){synchronized(devices){devices.remove(s.getServiceName());}runOnUiThread(()->refreshDevices());}
-   public void onDiscoveryStopped(String t){} public void onStartDiscoveryFailed(String t,int e){try{nsd.stopServiceDiscovery(this);}catch(Exception ignored){}} public void onStopDiscoveryFailed(String t,int e){}
+   public void onServiceFound(NsdServiceInfo service){
+    if(!isQuanLianService(service.getServiceType())||myName().equals(service.getServiceName()))return;
+    try{nsd.resolveService(service,new NsdManager.ResolveListener(){
+     public void onResolveFailed(NsdServiceInfo info,int error){}
+     public void onServiceResolved(NsdServiceInfo info){
+      InetAddress chosen=info.getHost();
+      if(Build.VERSION.SDK_INT>=34){try{for(InetAddress candidate:info.getHostAddresses()){if(candidate instanceof Inet4Address){chosen=candidate;break;}if(chosen==null)chosen=candidate;}}catch(Exception ignored){}}
+      if(chosen==null||info.getPort()<1)return;
+      Device device=new Device(info.getServiceName(),info.getServiceName(),chosen,info.getPort());
+      synchronized(devices){devices.put(device.key,device);}
+      runOnUiThread(()->refreshDevices());
+     }
+    });}catch(Exception ignored){}
+   }
+   public void onServiceLost(NsdServiceInfo service){synchronized(devices){devices.remove(service.getServiceName());}runOnUiThread(()->refreshDevices());}
+   public void onDiscoveryStopped(String type){if(discovery==this)discovery=null;}
+   public void onStartDiscoveryFailed(String type,int error){try{nsd.stopServiceDiscovery(this);}catch(Exception ignored){}if(discovery==this)discovery=null;new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive)discover();},2000);}
+   public void onStopDiscoveryFailed(String type,int error){try{nsd.stopServiceDiscovery(this);}catch(Exception ignored){}if(discovery==this)discovery=null;new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive)discover();},2000);}
   };
-  try{nsd.discoverServices(TYPE,NsdManager.PROTOCOL_DNS_SD,discovery);}catch(Exception ignored){}
+  discovery=listener;
+  try{nsd.discoverServices(TYPE,NsdManager.PROTOCOL_DNS_SD,listener);}catch(Exception error){if(discovery==listener)discovery=null;new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive)discover();},2000);}
  }
  private void refreshDiscovery(){
   synchronized(devices){devices.clear();}
@@ -111,7 +131,7 @@ public class MainActivity extends Activity {
   discovery=null;
   if(old!=null){try{nsd.stopServiceDiscovery(old);}catch(Exception ignored){}}
   new android.os.Handler(getMainLooper()).postDelayed(()->{
-   if(!alive||nsd==null||registration==null)return;
+   if(!alive||nsd==null)return;
    discover();
   },600);
  }
@@ -170,7 +190,7 @@ public class MainActivity extends Activity {
      String error=intent.getStringExtra(TransferForegroundService.EXTRA_ERROR);
      if(sendProgress!=null){sendProgress.dismiss();sendProgress=null;}
      unregisterSendReceiver();
-     if(success)Toast.makeText(MainActivity.this,"发送成功："+target.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();
+     if(success){uris.clear();names.clear();sizes.clear();retryDevice=null;page=0;home();Toast.makeText(MainActivity.this,"发送成功："+target.name+"，已完成传输并清空待发送列表",Toast.LENGTH_LONG).show();}
      else if(cancelled)Toast.makeText(MainActivity.this,"已取消发送",Toast.LENGTH_SHORT).show();
      else new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
     }
