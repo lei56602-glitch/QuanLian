@@ -8,6 +8,7 @@ import android.net.nsd.*;
 import android.net.wifi.WifiManager;
 import android.os.*;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.content.ContentValues;
 import java.io.*;
 import java.net.*;
@@ -76,10 +77,10 @@ public class ReceiveForegroundService extends Service {
             while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
         }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
     }
-    private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","");}
+    private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
     private void publish(int port){
         try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);
-            registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){}public void onRegistrationFailed(NsdServiceInfo s,int e){broadcastStatus("设备广播失败",-1);}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
+            registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){broadcastStatus("局域网设备广播已启动："+s.getServiceName(),port());}public void onRegistrationFailed(NsdServiceInfo s,int e){broadcastStatus("设备广播失败（"+e+"），正在重试",-1);main.postDelayed(()->{if(running)publish(port());},2500);}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
             nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);
         }catch(Exception e){broadcastStatus("设备广播启动失败",-1);}
     }
