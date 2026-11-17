@@ -14,6 +14,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <application
+        android:banner="@drawable/tv_banner"
         android:allowBackup="true"
         android:label="小李全联"
         android:icon="@drawable/ic_launcher"
