@@ -72,12 +72,12 @@ public class MainActivity extends Activity {
  }
  private void receive(Socket socket){
   try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
-   s.setSoTimeout(120000);if(!"QUANLIAN2".equals(in.readUTF()))return;String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)return;
+   s.setSoTimeout(180000);runOnUiThread(()->Toast.makeText(this,"收到设备连接，正在读取发送请求…",Toast.LENGTH_SHORT).show());if(!"QUANLIAN2".equals(in.readUTF()))throw new IOException("传输协议不匹配");String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)return;
    ArrayList<String> fileNames=new ArrayList<>();ArrayList<Long> fileSizes=new ArrayList<>();ArrayList<String> hashes=new ArrayList<>();long total=0;
    for(int i=0;i<count;i++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(size<0||hash.length()!=64||total>Long.MAX_VALUE-size)return;fileNames.add(name);fileSizes.add(size);hashes.add(hash);total+=size;}
    final long totalBytes=total;CountDownLatch latch=new CountDownLatch(1);final boolean[] yes={false};
    runOnUiThread(()->new AlertDialog.Builder(this).setTitle("接收文件请求").setMessage(sender+" 要发送 "+count+" 个文件（"+sizeText(totalBytes)+"）。是否接收？").setPositiveButton("接收",(a,b)->{yes[0]=true;latch.countDown();}).setNegativeButton("拒绝",(a,b)->latch.countDown()).setOnCancelListener(a->latch.countDown()).show());
-   boolean accepted=latch.await(90,TimeUnit.SECONDS)&&yes[0];out.writeBoolean(accepted);out.flush();if(!accepted)return;
+   boolean accepted=latch.await(90,TimeUnit.SECONDS)&&yes[0];out.writeBoolean(accepted);out.flush();if(!accepted){if(latch.getCount()==0&&!yes[0])runOnUiThread(()->Toast.makeText(this,"已拒绝或取消接收",Toast.LENGTH_SHORT).show());else runOnUiThread(()->Toast.makeText(this,"等待接收确认超时",Toast.LENGTH_LONG).show());return;}
    File dir=new File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS),"QuanLianReceived");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建接收目录");
    byte[] buf=new byte[BUF];
    for(int i=0;i<count;i++){
@@ -107,17 +107,19 @@ public class MainActivity extends Activity {
      if(total>Long.MAX_VALUE-length)throw new IOException("文件总大小超出限制");total+=length;files.add(new TransferFile(cached,nameSnapshot.get(i),length,hex(md.digest())));
     }
     final long totalBytes=total;
-    runOnUiThread(()->progress.setMessage("文件准备完成，正在连接 "+d.name+"…"));
-    try(Socket socket=new Socket(d.host,d.port)){
-     socket.setSoTimeout(120000);DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+    runOnUiThread(()->progress.setMessage("文件已准备完成，正在连接 "+d.name+"（"+d.host.getHostAddress()+":"+d.port+"）…"));
+    try(Socket socket=new Socket()){
+     socket.connect(new InetSocketAddress(d.host,d.port),15000);socket.setSoTimeout(180000);socket.setTcpNoDelay(true);socket.setKeepAlive(true);
+     runOnUiThread(()->progress.setMessage("已连接设备，正在发送文件清单并等待对方确认…"));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
      out.writeUTF("QUANLIAN2");out.writeUTF(myName());out.writeInt(files.size());
      for(TransferFile file:files){out.writeUTF(file.name);out.writeLong(file.size);out.writeUTF(file.hash);}out.flush();
-     if(!in.readBoolean())throw new IOException("对方拒绝接收");
+     if(!in.readBoolean())throw new IOException("对方拒绝接收或接收确认超时");
+     runOnUiThread(()->progress.setMessage("对方已确认，开始传输文件数据…"));
      long sent=0;long lastUi=0;long transferStarted=System.currentTimeMillis();int index=0;
      for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->progress.setMessage("正在发送第 "+item+"/"+files.size()+" 个文件："+file.name));
       try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;final long elapsed=Math.max(1,now-transferStarted);final long speed=(long)(done*1000.0/elapsed);final long remaining=speed>0?(totalBytes-done)/speed:0;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));progress.setMessage("正在发送："+sizeText(done)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining));});lastUi=now;}}out.flush();}
      }
-     if(!in.readBoolean())throw new IOException("接收端未确认完成");
+     if(!in.readBoolean())throw new IOException("接收端未确认完成或文件校验失败");
     }
     runOnUiThread(()->{progress.dismiss();Toast.makeText(this,"发送成功："+d.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();});
    }catch(Exception e){runOnUiThread(()->{progress.dismiss();Toast.makeText(this,"发送失败："+e.getMessage(),Toast.LENGTH_LONG).show();});}
