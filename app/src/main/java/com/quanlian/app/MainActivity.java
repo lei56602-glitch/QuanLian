@@ -129,7 +129,7 @@ public class MainActivity extends Activity {
   TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name);
  }
 
- @SuppressLint("UnspecifiedRegisterReceiverFlag")
+ @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
  private void registerSendReceiver(Device target){
   unregisterSendReceiver();
   sendReceiver=new BroadcastReceiver(){
