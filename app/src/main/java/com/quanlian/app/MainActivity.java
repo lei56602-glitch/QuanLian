@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
  private NsdManager.DiscoveryListener discovery; private WifiManager.MulticastLock lock;
  private ServerSocket server; private volatile boolean alive=true; private int port=-1, page=0;
  private LinearLayout deviceList; private TextView deviceStatus, receiveStatus;
+ private ProgressDialog sendProgress; private BroadcastReceiver sendReceiver; private Device retryDevice;
  static class Device { String name,key; InetAddress host; int port; Device(String n,String k,InetAddress h,int p){name=n;key=k;host=h;port=p;} }
  private int dp(float x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
  private GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));return d;}
@@ -120,44 +121,47 @@ public class MainActivity extends Activity {
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
  private void send(Device d){
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
-  final ArrayList<Uri> uriSnapshot=new ArrayList<>(uris);final ArrayList<String> nameSnapshot=new ArrayList<>(names);
-  final AtomicBoolean cancelRequested=new AtomicBoolean(false);final AtomicReference<Socket> activeSocket=new AtomicReference<>();
-  ProgressDialog progress=new ProgressDialog(this);progress.setTitle("小李全联正在发送");progress.setMessage("正在准备文件并计算校验值…");progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);progress.setMax(1000);progress.setProgress(0);progress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->{cancelRequested.set(true);Socket active=activeSocket.get();if(active!=null)try{active.close();}catch(Exception ignored){}});progress.setCancelable(false);progress.show();
-  TransferForegroundService.start(this,"正在准备文件并计算校验值…");
-  workers.execute(()->{
-   ArrayList<File> cacheFiles=new ArrayList<>();
-   try{
-    ArrayList<TransferFile> files=new ArrayList<>();byte[] buf=new byte[BUF];long total=0;
-    for(int i=0;i<uriSnapshot.size();i++){
-     File cached=File.createTempFile("quanlian_send_",".bin",getCacheDir());cacheFiles.add(cached);MessageDigest md=MessageDigest.getInstance("SHA-256");long length=0;
-     try(InputStream input=getContentResolver().openInputStream(uriSnapshot.get(i));FileOutputStream output=new FileOutputStream(cached)){
-      if(input==null)throw new IOException("无法读取文件："+nameSnapshot.get(i));int n;while((n=input.read(buf))!=-1){if(cancelRequested.get())throw new IOException("已取消发送");output.write(buf,0,n);md.update(buf,0,n);length+=n;}output.getFD().sync();
-     }
-     if(total>Long.MAX_VALUE-length)throw new IOException("文件总大小超出限制");total+=length;files.add(new TransferFile(cached,nameSnapshot.get(i),length,hex(md.digest())));
-    }
-    final long totalBytes=total;
-    if(cancelRequested.get())throw new IOException("已取消发送");
-    runOnUiThread(()->{String status="文件已准备完成，正在连接 "+d.name+"（"+d.host.getHostAddress()+":"+d.port+"）…";progress.setMessage(status);TransferForegroundService.update(this,status);});
-    try(Socket socket=new Socket()){
-     activeSocket.set(socket);socket.connect(new InetSocketAddress(d.host,d.port),15000);socket.setSoTimeout(180000);socket.setTcpNoDelay(true);socket.setKeepAlive(true);
-     runOnUiThread(()->{String status="已连接设备，正在发送文件清单并等待对方确认…";progress.setMessage(status);TransferForegroundService.update(this,status);});DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-     out.writeUTF("QUANLIAN2");out.writeUTF(myName());out.writeInt(files.size());
-     for(TransferFile file:files){out.writeUTF(file.name);out.writeLong(file.size);out.writeUTF(file.hash);}out.flush();
-     if(!in.readBoolean())throw new IOException("对方拒绝接收或接收确认超时");
-     runOnUiThread(()->{String status="对方已确认，开始传输文件数据…";progress.setMessage(status);TransferForegroundService.update(this,status);});
-     long sent=0;long lastUi=0;long transferStarted=System.currentTimeMillis();int index=0;
-     for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->{String status="正在发送第 "+item+"/"+files.size()+" 个文件："+file.name;progress.setMessage(status);TransferForegroundService.update(this,status);});
-      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){if(cancelRequested.get())throw new IOException("已取消发送");out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;final long elapsed=Math.max(1,now-transferStarted);final long speed=(long)(done*1000.0/elapsed);final long remaining=speed>0?(totalBytes-done)/speed:0;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));String status="正在发送："+sizeText(done)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining);progress.setMessage(status);TransferForegroundService.update(this,status);});lastUi=now;}}out.flush();}
-     }
-     if(!in.readBoolean())throw new IOException("接收端未确认完成或文件校验失败");
-    }
-    for(int i=0;i<files.size();i++)addHistory("发送",files.get(i).name,files.get(i).size,d.name,uriSnapshot.get(i).toString());
-    runOnUiThread(()->{progress.dismiss();TransferForegroundService.stop(this);Toast.makeText(this,"发送成功："+d.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();});
-   }catch(Exception e){runOnUiThread(()->{progress.dismiss();TransferForegroundService.stop(this);if(cancelRequested.get()){Toast.makeText(this,"已取消发送",Toast.LENGTH_SHORT).show();}else{new AlertDialog.Builder(this).setTitle("发送失败").setMessage(e.getMessage()==null?"传输中断":e.getMessage()).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(d)).show();}});}
-   finally{for(File file:cacheFiles)try{if(file.exists())file.delete();}catch(Exception ignored){}}
-  });
+  sendProgress=new ProgressDialog(this);sendProgress.setTitle("小李全联正在发送");sendProgress.setMessage("正在准备文件并计算校验值…");sendProgress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);sendProgress.setMax(1000);sendProgress.setProgress(0);
+  sendProgress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->TransferForegroundService.cancelTransfer(this));
+  sendProgress.setCancelable(false);sendProgress.show();
+  retryDevice=d;
+  registerSendReceiver(d);
+  TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name);
  }
- 
+
+ @SuppressLint("UnspecifiedRegisterReceiverFlag")
+ private void registerSendReceiver(Device target){
+  unregisterSendReceiver();
+  sendReceiver=new BroadcastReceiver(){
+   @Override public void onReceive(Context context,Intent intent){
+    if(intent==null)return;
+    if(TransferForegroundService.ACTION_PROGRESS.equals(intent.getAction())){
+     if(sendProgress!=null&&sendProgress.isShowing()){
+      sendProgress.setMessage(intent.getStringExtra(TransferForegroundService.EXTRA_TEXT));
+      sendProgress.setProgress(intent.getIntExtra(TransferForegroundService.EXTRA_PROGRESS,0));
+     }
+    }else if(TransferForegroundService.ACTION_RESULT.equals(intent.getAction())){
+     boolean success=intent.getBooleanExtra(TransferForegroundService.EXTRA_SUCCESS,false);
+     boolean cancelled=intent.getBooleanExtra(TransferForegroundService.EXTRA_CANCELLED,false);
+     String error=intent.getStringExtra(TransferForegroundService.EXTRA_ERROR);
+     if(sendProgress!=null){sendProgress.dismiss();sendProgress=null;}
+     unregisterSendReceiver();
+     if(success)Toast.makeText(MainActivity.this,"发送成功："+target.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();
+     else if(cancelled)Toast.makeText(MainActivity.this,"已取消发送",Toast.LENGTH_SHORT).show();
+     else new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
+    }
+   }
+  };
+  IntentFilter filter=new IntentFilter();
+  filter.addAction(TransferForegroundService.ACTION_PROGRESS);
+  filter.addAction(TransferForegroundService.ACTION_RESULT);
+  if(Build.VERSION.SDK_INT>=33)registerReceiver(sendReceiver,filter,Context.RECEIVER_NOT_EXPORTED);
+  else registerReceiver(sendReceiver,filter);
+ }
+
+ private void unregisterSendReceiver(){
+  if(sendReceiver!=null){try{unregisterReceiver(sendReceiver);}catch(Exception ignored){}sendReceiver=null;}
+ }
  private Uri publishReceivedFile(File source,String name)throws Exception{
   if(Build.VERSION.SDK_INT>=29){
    ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");values.put(MediaStore.MediaColumns.IS_PENDING,1);
@@ -195,6 +199,6 @@ public class MainActivity extends Activity {
  private void selectedPage(){page=1;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"已选择文件","选择接收设备，开始局域网发送");long total=0;for(long z:sizes)if(z>0)total+=z;l.addView(txt("已选择 "+uris.size()+" 个文件 · "+sizeText(total),15,0xffbed7f2,true));gap(l,12);for(int i=0;i<names.size();i++){LinearLayout c=card();c.addView(txt(names.get(i),15,-1,true));gap(c,4);c.addView(txt(sizeText(sizes.get(i)),12,0xffb7c7de,false));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(8);l.addView(c,p);}Button choose=btn("选择接收设备",0xff1f77dc);choose.setOnClickListener(v->devicePage());l.addView(choose);Button more=btn("继续添加文件",0xff304b70);more.setOnClickListener(v->pick());LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,-2);mp.topMargin=dp(8);l.addView(more,mp);install(l);}
  private void devicePage(){page=2;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"选择接收设备","点击设备名称即可发起文件传输");deviceStatus=txt("正在搜索…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();Button refresh=btn("刷新设备列表",0xff304b70);refresh.setOnClickListener(v->refreshDiscovery());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(10);l.addView(refresh,p);install(l);}
  private void receivePage(){page=3;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"接收文件","打开接收页面，等待附近设备发送");LinearLayout c=card();c.setGravity(Gravity.CENTER_HORIZONTAL);TextView icon=txt("◎",54,0xff46beae,true);icon.setGravity(Gravity.CENTER);c.addView(icon);gap(c,8);c.addView(txt("正在等待连接",20,-1,true));gap(c,8);receiveStatus=txt(port>0?"接收服务已启动 · 端口 "+port:"正在启动接收服务…",13,0xffb7c7de,false);c.addView(receiveStatus);l.addView(c);gap(l,12);LinearLayout note=card();note.addView(txt("使用方法",16,-1,true));gap(note,6);note.addView(txt("发送设备打开小李全联后，会自动发现本设备。发送方点击本机名称后，本机将弹出接收确认。双方需要连接同一 Wi-Fi。",13,0xffb7c7de,false));l.addView(note);install(l);}
- @Override protected void onDestroy(){alive=false;try{if(server!=null)server.close();}catch(Exception ignored){}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;try{if(server!=null)server.close();}catch(Exception ignored){}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
  @Override public void onBackPressed(){if(page==0)super.onBackPressed();else if(page==1)home();else if(page==2)selectedPage();else if(page==4)home();else home();}
 }
