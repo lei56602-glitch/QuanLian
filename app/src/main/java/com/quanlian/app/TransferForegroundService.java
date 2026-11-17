@@ -6,6 +6,8 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -19,6 +21,7 @@ public class TransferForegroundService extends Service {
     private static final String EXTRA_TEXT = "notification_text";
     private PowerManager.WakeLock wakeLock;
     private String currentText = "正在进行文件传输…";
+    private BroadcastReceiver commandReceiver;
 
     public static void start(Context context, String text) {
         Intent intent = new Intent(context, TransferForegroundService.class);
@@ -29,21 +32,40 @@ public class TransferForegroundService extends Service {
     }
 
     public static void update(Context context, String text) {
-        Intent intent = new Intent(context, TransferForegroundService.class);
-        intent.setAction(ACTION_UPDATE);
+        Intent intent = new Intent(ACTION_UPDATE);
+        intent.setPackage(context.getPackageName());
         intent.putExtra(EXTRA_TEXT, text);
-        context.startService(intent);
+        context.sendBroadcast(intent);
     }
 
     public static void stop(Context context) {
-        Intent intent = new Intent(context, TransferForegroundService.class);
-        intent.setAction(ACTION_STOP);
-        context.startService(intent);
+        Intent intent = new Intent(ACTION_STOP);
+        intent.setPackage(context.getPackageName());
+        context.sendBroadcast(intent);
     }
 
     @Override public void onCreate() {
         super.onCreate();
         createChannel();
+        commandReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (intent == null) return;
+                if (ACTION_STOP.equals(intent.getAction())) {
+                    stopForeground(true);
+                    stopSelf();
+                } else if (ACTION_UPDATE.equals(intent.getAction())) {
+                    String value = intent.getStringExtra(EXTRA_TEXT);
+                    if (value != null) currentText = value;
+                    NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                    if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification(currentText));
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ACTION_UPDATE);
+        filter.addAction(ACTION_STOP);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(commandReceiver, filter);
         try {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             if (pm != null) {
@@ -55,22 +77,12 @@ public class TransferForegroundService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? ACTION_START : intent.getAction();
         if (intent != null && intent.hasExtra(EXTRA_TEXT)) currentText = intent.getStringExtra(EXTRA_TEXT);
-        if (ACTION_STOP.equals(action)) {
-            stopForeground(true);
-            stopSelf();
-            return START_NOT_STICKY;
-        }
         Notification notification = buildNotification(currentText);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
             startForeground(NOTIFICATION_ID, notification);
-        }
-        if (ACTION_UPDATE.equals(action)) {
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            if (manager != null) manager.notify(NOTIFICATION_ID, notification);
         }
         return START_NOT_STICKY;
     }
@@ -98,6 +110,7 @@ public class TransferForegroundService extends Service {
     }
 
     @Override public void onDestroy() {
+        try { if (commandReceiver != null) unregisterReceiver(commandReceiver); } catch (Exception ignored) { }
         try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) { }
         super.onDestroy();
     }
