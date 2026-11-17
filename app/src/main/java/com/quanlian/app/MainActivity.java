@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends Activity {
- private static final int PICK=1001, BUF=65536;
+ private static final int PICK=1001, REQ_NOTIFICATIONS=1002, BUF=65536;
  private static final String TYPE="_quanlian._tcp.";
  private final ArrayList<Uri> uris=new ArrayList<>();
  private final ArrayList<String> names=new ArrayList<>();
@@ -45,7 +45,7 @@ public class MainActivity extends Activity {
  private int dp(float x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
  private GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));return d;}
  private TextView txt(String s,int z,int c,boolean b){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(c);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
- private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);l.setPadding(dp(20),dp(22),dp(20),dp(20));return l;}
+ private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);int horizontal=widthDp<360?14:(widthDp<600?20:32);l.setPadding(dp(horizontal),dp(widthDp<600?18:24),dp(horizontal),dp(widthDp<600?18:24));return l;}
  private LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);l.setPadding(dp(16),dp(16),dp(16),dp(16));l.setBackground(shape(Color.rgb(28,45,75),18));l.setFocusable(true);return l;}
  private void gap(LinearLayout l,int h){l.addView(new View(this),new LinearLayout.LayoutParams(1,dp(h)));}
  private Button btn(String s,int c){Button b=new Button(this);b.setText(s);b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(shape(c,16));b.setMinHeight(dp(54));return b;}
