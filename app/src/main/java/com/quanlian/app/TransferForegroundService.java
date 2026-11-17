@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.net.Uri;
 import android.content.ContentValues;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.os.Environment;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -253,7 +254,9 @@ public class TransferForegroundService extends Service {
     private String deviceName() {
         String model=Build.MODEL;
         if(model==null||model.trim().isEmpty()) model="Android";
-        return "小李全联-" + model.replaceAll("[^\\p{L}\\p{N}_-]","");
+        String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);
+        if(id==null||id.length()<6) id=UUID.randomUUID().toString().replace("-","");
+        return "小李全联-" + model.replaceAll("[^\\p{L}\\p{N}_-]","") + "-" + id.substring(id.length()-6);
     }
 
     private String sizeText(long value) {
