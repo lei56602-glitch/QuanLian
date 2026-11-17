@@ -113,9 +113,9 @@ public class MainActivity extends Activity {
      out.writeUTF("QUANLIAN2");out.writeUTF(myName());out.writeInt(files.size());
      for(TransferFile file:files){out.writeUTF(file.name);out.writeLong(file.size);out.writeUTF(file.hash);}out.flush();
      if(!in.readBoolean())throw new IOException("对方拒绝接收");
-     long sent=0;long lastUi=0;int index=0;
+     long sent=0;long lastUi=0;long transferStarted=System.currentTimeMillis();int index=0;
      for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->progress.setMessage("正在发送第 "+item+"/"+files.size()+" 个文件："+file.name));
-      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));progress.setMessage("正在发送："+sizeText(done)+" / "+sizeText(totalBytes));});lastUi=now;}}out.flush();}
+      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;final long elapsed=Math.max(1,now-transferStarted);final long speed=(long)(done*1000.0/elapsed);final long remaining=speed>0?(totalBytes-done)/speed:0;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));progress.setMessage("正在发送："+sizeText(done)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining));});lastUi=now;}}out.flush();}
      }
      if(!in.readBoolean())throw new IOException("接收端未确认完成");
     }
@@ -124,6 +124,7 @@ public class MainActivity extends Activity {
    finally{for(File file:cacheFiles)try{if(file.exists())file.delete();}catch(Exception ignored){}}
   });
  }
+ private String etaText(long seconds){if(seconds<60)return seconds+" 秒";if(seconds<3600)return (seconds/60)+" 分钟 "+(seconds%60)+" 秒";return (seconds/3600)+" 小时 "+((seconds%3600)/60)+" 分钟";}
  private static String hex(byte[] bytes){StringBuilder b=new StringBuilder(bytes.length*2);for(byte v:bytes)b.append(String.format(Locale.US,"%02x",v&0xff));return b.toString();}
  private void home(){
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
