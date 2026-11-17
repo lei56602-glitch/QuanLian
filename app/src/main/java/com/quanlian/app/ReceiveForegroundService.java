@@ -93,7 +93,7 @@ public class ReceiveForegroundService extends Service {
             File dir=new File(getCacheDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
             byte[] buf=new byte[BUF];
             for(int x=0;x<count;x++){
-                String safe=names.get(x).replaceAll("[\\\\/:*?\\"<>|]","_").trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+x;
+                StringBuilder clean=new StringBuilder();for(char ch:names.get(x).toCharArray())clean.append("\\\\/:*?\"<>|".indexOf(ch)>=0?"_":ch);String safe=clean.toString().trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+x;
                 File tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");MessageDigest digest=MessageDigest.getInstance("SHA-256");long left=sizes.get(x);
                 try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
