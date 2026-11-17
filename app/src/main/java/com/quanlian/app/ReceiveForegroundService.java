@@ -105,10 +105,17 @@ public class ReceiveForegroundService extends Service {
     }
     private int port(){return server==null?-1:server.getLocalPort();}
     private Uri saveFile(File src,String name)throws Exception{
-        ContentValues v=new ContentValues();v.put(MediaStore.MediaColumns.DISPLAY_NAME,name);v.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");v.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");v.put(MediaStore.MediaColumns.IS_PENDING,1);
-        Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(u==null)return null;
-        try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
-        v.clear();v.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,v,null,null);return u;
+        if(Build.VERSION.SDK_INT>=29){
+            ContentValues v=new ContentValues();v.put(MediaStore.MediaColumns.DISPLAY_NAME,name);v.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");v.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");v.put(MediaStore.MediaColumns.IS_PENDING,1);
+            Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(u==null)return null;
+            try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+            v.clear();v.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,v,null,null);return u;
+        }
+        File dir=new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),"小李全联");
+        if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建下载目录");
+        File target=new File(dir,System.currentTimeMillis()+"_"+name);
+        try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+        return Uri.fromFile(target);
     }
     private void addHistory(String name,long size,String peer,String uri){
         try{SharedPreferences p=getSharedPreferences("transfer_history",MODE_PRIVATE);JSONArray old=new JSONArray(p.getString("items","[]")),next=new JSONArray();JSONObject o=new JSONObject();o.put("direction","接收");o.put("name",name);o.put("size",size);o.put("peer",peer);o.put("time",System.currentTimeMillis());o.put("uri",uri);next.put(o);for(int i=0;i<old.length()&&i<199;i++)next.put(old.getJSONObject(i));p.edit().putString("items",next.toString()).apply();}catch(Exception ignored){}
