@@ -16,6 +16,7 @@ import android.view.View;
 import android.widget.*;
 import java.io.*;
 import java.net.*;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -71,23 +72,59 @@ public class MainActivity extends Activity {
  }
  private void receive(Socket socket){
   try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
-   s.setSoTimeout(120000);if(!"QUANLIAN1".equals(in.readUTF()))return;String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)return;
-   ArrayList<String> fileNames=new ArrayList<>();ArrayList<Long> fileSizes=new ArrayList<>();long total=0;
-   for(int i=0;i<count;i++){String n=in.readUTF();long z=in.readLong();if(z<0)return;fileNames.add(n);fileSizes.add(z);total+=z;}
+   s.setSoTimeout(120000);if(!"QUANLIAN2".equals(in.readUTF()))return;String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)return;
+   ArrayList<String> fileNames=new ArrayList<>();ArrayList<Long> fileSizes=new ArrayList<>();ArrayList<String> hashes=new ArrayList<>();long total=0;
+   for(int i=0;i<count;i++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(size<0||hash.length()!=64||total>Long.MAX_VALUE-size)return;fileNames.add(name);fileSizes.add(size);hashes.add(hash);total+=size;}
    final long totalBytes=total;CountDownLatch latch=new CountDownLatch(1);final boolean[] yes={false};
    runOnUiThread(()->new AlertDialog.Builder(this).setTitle("接收文件请求").setMessage(sender+" 要发送 "+count+" 个文件（"+sizeText(totalBytes)+"）。是否接收？").setPositiveButton("接收",(a,b)->{yes[0]=true;latch.countDown();}).setNegativeButton("拒绝",(a,b)->latch.countDown()).setOnCancelListener(a->latch.countDown()).show());
    boolean accepted=latch.await(90,TimeUnit.SECONDS)&&yes[0];out.writeBoolean(accepted);out.flush();if(!accepted)return;
    File dir=new File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS),"QuanLianReceived");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建接收目录");
    byte[] buf=new byte[BUF];
-   for(int i=0;i<count;i++){String safe=fileNames.get(i).replaceAll("[\\\\/:*?\"<>|]","_");File f=new File(dir,System.currentTimeMillis()+"_"+safe);long left=fileSizes.get(i);try(FileOutputStream fos=new FileOutputStream(f)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);left-=n;}}}
-   out.writeBoolean(true);out.flush();runOnUiThread(()->Toast.makeText(this,"接收完成，文件保存在小李全联接收目录",Toast.LENGTH_LONG).show());
+   for(int i=0;i<count;i++){
+    String safe=fileNames.get(i).replaceAll("[\\\\/:*?\"<>|]","_").trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+i;
+    File temp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");MessageDigest digest=MessageDigest.getInstance("SHA-256");long left=fileSizes.get(i);
+    try(FileOutputStream fos=new FileOutputStream(temp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
+    String actual=hex(digest.digest());if(!actual.equalsIgnoreCase(hashes.get(i))){temp.delete();throw new IOException("文件校验失败："+safe);}
+    File target=new File(dir,System.currentTimeMillis()+"_"+i+"_"+safe);if(!temp.renameTo(target)){temp.delete();throw new IOException("无法保存文件："+safe);}
+   }
+   out.writeBoolean(true);out.flush();runOnUiThread(()->Toast.makeText(this,"接收完成，文件已通过完整性校验",Toast.LENGTH_LONG).show());
   }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"接收失败："+e.getMessage(),Toast.LENGTH_LONG).show());}
  }
+ private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
  private void send(Device d){
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
-  Toast.makeText(this,"正在连接 "+d.name,Toast.LENGTH_SHORT).show();
-  workers.execute(()->{try(Socket s=new Socket(d.host,d.port)){s.setSoTimeout(120000);DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));out.writeUTF("QUANLIAN1");out.writeUTF(myName());out.writeInt(uris.size());for(int i=0;i<uris.size();i++){out.writeUTF(names.get(i));out.writeLong(sizes.get(i));}out.flush();if(!in.readBoolean())throw new IOException("对方拒绝接收");byte[] buf=new byte[BUF];for(Uri u:new ArrayList<>(uris)){try(InputStream is=getContentResolver().openInputStream(u)){if(is==null)throw new IOException("无法读取文件");int n;while((n=is.read(buf))!=-1)out.write(buf,0,n);}out.flush();}if(!in.readBoolean())throw new IOException("接收端未确认完成");runOnUiThread(()->Toast.makeText(this,"发送成功："+d.name,Toast.LENGTH_LONG).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"发送失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
+  final ArrayList<Uri> uriSnapshot=new ArrayList<>(uris);final ArrayList<String> nameSnapshot=new ArrayList<>(names);
+  ProgressDialog progress=new ProgressDialog(this);progress.setTitle("小李全联正在发送");progress.setMessage("正在准备文件并计算校验值…");progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);progress.setMax(1000);progress.setProgress(0);progress.setCancelable(false);progress.show();
+  workers.execute(()->{
+   ArrayList<File> cacheFiles=new ArrayList<>();
+   try{
+    ArrayList<TransferFile> files=new ArrayList<>();byte[] buf=new byte[BUF];long total=0;
+    for(int i=0;i<uriSnapshot.size();i++){
+     File cached=File.createTempFile("quanlian_send_",".bin",getCacheDir());cacheFiles.add(cached);MessageDigest md=MessageDigest.getInstance("SHA-256");long length=0;
+     try(InputStream input=getContentResolver().openInputStream(uriSnapshot.get(i));FileOutputStream output=new FileOutputStream(cached)){
+      if(input==null)throw new IOException("无法读取文件："+nameSnapshot.get(i));int n;while((n=input.read(buf))!=-1){output.write(buf,0,n);md.update(buf,0,n);length+=n;}output.getFD().sync();
+     }
+     if(total>Long.MAX_VALUE-length)throw new IOException("文件总大小超出限制");total+=length;files.add(new TransferFile(cached,nameSnapshot.get(i),length,hex(md.digest())));
+    }
+    final long totalBytes=total;
+    runOnUiThread(()->progress.setMessage("文件准备完成，正在连接 "+d.name+"…"));
+    try(Socket socket=new Socket(d.host,d.port)){
+     socket.setSoTimeout(120000);DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+     out.writeUTF("QUANLIAN2");out.writeUTF(myName());out.writeInt(files.size());
+     for(TransferFile file:files){out.writeUTF(file.name);out.writeLong(file.size);out.writeUTF(file.hash);}out.flush();
+     if(!in.readBoolean())throw new IOException("对方拒绝接收");
+     long sent=0;long lastUi=0;int index=0;
+     for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->progress.setMessage("正在发送第 "+item+"/"+files.size()+" 个文件："+file.name));
+      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));progress.setMessage("正在发送："+sizeText(done)+" / "+sizeText(totalBytes));});lastUi=now;}}out.flush();}
+     }
+     if(!in.readBoolean())throw new IOException("接收端未确认完成");
+    }
+    runOnUiThread(()->{progress.dismiss();Toast.makeText(this,"发送成功："+d.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();});
+   }catch(Exception e){runOnUiThread(()->{progress.dismiss();Toast.makeText(this,"发送失败："+e.getMessage(),Toast.LENGTH_LONG).show();});}
+   finally{for(File file:cacheFiles)try{if(file.exists())file.delete();}catch(Exception ignored){}}
+  });
  }
+ private static String hex(byte[] bytes){StringBuilder b=new StringBuilder(bytes.length*2);for(byte v:bytes)b.append(String.format(Locale.US,"%02x",v&0xff));return b.toString();}
  private void home(){
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
   l.addView(txt("小李全联",30,-1,true));TextView sub=txt("让所有设备，自由交换文件",14,0xffabc6e4,false);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.topMargin=dp(4);sp.bottomMargin=dp(22);l.addView(sub,sp);
