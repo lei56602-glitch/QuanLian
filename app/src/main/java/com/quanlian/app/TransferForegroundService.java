@@ -52,6 +52,7 @@ public class TransferForegroundService extends Service {
                 if (intent == null) return;
                 if (ACTION_STOP.equals(intent.getAction())) {
                     stopForeground(true);
+                    releaseWakeLock();
                     stopSelf();
                 } else if (ACTION_UPDATE.equals(intent.getAction())) {
                     String value = intent.getStringExtra(EXTRA_TEXT);
@@ -66,18 +67,11 @@ public class TransferForegroundService extends Service {
         filter.addAction(ACTION_STOP);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(commandReceiver, filter);
-        try {
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QuanLian:FileTransfer");
-                wakeLock.setReferenceCounted(false);
-                wakeLock.acquire(6 * 60 * 60 * 1000L);
-            }
-        } catch (Exception ignored) { }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.hasExtra(EXTRA_TEXT)) currentText = intent.getStringExtra(EXTRA_TEXT);
+        if (intent != null && ACTION_START.equals(intent.getAction())) acquireWakeLock();
         Notification notification = buildNotification(currentText);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -85,6 +79,21 @@ public class TransferForegroundService extends Service {
             startForeground(NOTIFICATION_ID, notification);
         }
         return START_NOT_STICKY;
+    }
+
+    private void acquireWakeLock() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && (wakeLock == null || !wakeLock.isHeld())) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "QuanLian:FileTransfer");
+                wakeLock.setReferenceCounted(false);
+                wakeLock.acquire(6 * 60 * 60 * 1000L);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private void releaseWakeLock() {
+        releaseWakeLock();
     }
 
     private void createChannel() {
@@ -113,6 +122,12 @@ public class TransferForegroundService extends Service {
         try { if (commandReceiver != null) unregisterReceiver(commandReceiver); } catch (Exception ignored) { }
         try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) { }
         super.onDestroy();
+    }
+
+    @Override public void onTimeout(int startId, int foregroundServiceType) {
+        releaseWakeLock();
+        stopForeground(true);
+        stopSelf(startId);
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
