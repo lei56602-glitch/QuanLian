@@ -117,6 +117,7 @@ public class MainActivity extends Activity {
   final ArrayList<Uri> uriSnapshot=new ArrayList<>(uris);final ArrayList<String> nameSnapshot=new ArrayList<>(names);
   final AtomicBoolean cancelRequested=new AtomicBoolean(false);final AtomicReference<Socket> activeSocket=new AtomicReference<>();
   ProgressDialog progress=new ProgressDialog(this);progress.setTitle("小李全联正在发送");progress.setMessage("正在准备文件并计算校验值…");progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);progress.setMax(1000);progress.setProgress(0);progress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->{cancelRequested.set(true);Socket active=activeSocket.get();if(active!=null)try{active.close();}catch(Exception ignored){}});progress.setCancelable(false);progress.show();
+  TransferForegroundService.start(this,"正在准备文件并计算校验值…");
   workers.execute(()->{
    ArrayList<File> cacheFiles=new ArrayList<>();
    try{
@@ -130,23 +131,23 @@ public class MainActivity extends Activity {
     }
     final long totalBytes=total;
     if(cancelRequested.get())throw new IOException("已取消发送");
-    runOnUiThread(()->progress.setMessage("文件已准备完成，正在连接 "+d.name+"（"+d.host.getHostAddress()+":"+d.port+"）…"));
+    runOnUiThread(()->{String status="文件已准备完成，正在连接 "+d.name+"（"+d.host.getHostAddress()+":"+d.port+"）…";progress.setMessage(status);TransferForegroundService.update(this,status);});
     try(Socket socket=new Socket()){
      activeSocket.set(socket);socket.connect(new InetSocketAddress(d.host,d.port),15000);socket.setSoTimeout(180000);socket.setTcpNoDelay(true);socket.setKeepAlive(true);
-     runOnUiThread(()->progress.setMessage("已连接设备，正在发送文件清单并等待对方确认…"));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+     runOnUiThread(()->{String status="已连接设备，正在发送文件清单并等待对方确认…";progress.setMessage(status);TransferForegroundService.update(this,status);});DataOutputStream out=new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));DataInputStream in=new DataInputStream(new BufferedInputStream(socket.getInputStream()));
      out.writeUTF("QUANLIAN2");out.writeUTF(myName());out.writeInt(files.size());
      for(TransferFile file:files){out.writeUTF(file.name);out.writeLong(file.size);out.writeUTF(file.hash);}out.flush();
      if(!in.readBoolean())throw new IOException("对方拒绝接收或接收确认超时");
-     runOnUiThread(()->progress.setMessage("对方已确认，开始传输文件数据…"));
+     runOnUiThread(()->{String status="对方已确认，开始传输文件数据…";progress.setMessage(status);TransferForegroundService.update(this,status);});
      long sent=0;long lastUi=0;long transferStarted=System.currentTimeMillis();int index=0;
-     for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->progress.setMessage("正在发送第 "+item+"/"+files.size()+" 个文件："+file.name));
-      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){if(cancelRequested.get())throw new IOException("已取消发送");out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;final long elapsed=Math.max(1,now-transferStarted);final long speed=(long)(done*1000.0/elapsed);final long remaining=speed>0?(totalBytes-done)/speed:0;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));progress.setMessage("正在发送："+sizeText(done)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining));});lastUi=now;}}out.flush();}
+     for(TransferFile file:files){index++;final int item=index;runOnUiThread(()->{String status="正在发送第 "+item+"/"+files.size()+" 个文件："+file.name;progress.setMessage(status);TransferForegroundService.update(this,status);});
+      try(InputStream input=new BufferedInputStream(new FileInputStream(file.file))){int n;while((n=input.read(buf))!=-1){if(cancelRequested.get())throw new IOException("已取消发送");out.write(buf,0,n);sent+=n;long now=System.currentTimeMillis();if(now-lastUi>250||sent==totalBytes){final long done=sent;final long elapsed=Math.max(1,now-transferStarted);final long speed=(long)(done*1000.0/elapsed);final long remaining=speed>0?(totalBytes-done)/speed:0;runOnUiThread(()->{progress.setProgress(totalBytes==0?1000:(int)Math.min(1000,(done*1000.0/totalBytes)));String status="正在发送："+sizeText(done)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining);progress.setMessage(status);TransferForegroundService.update(this,status);});lastUi=now;}}out.flush();}
      }
      if(!in.readBoolean())throw new IOException("接收端未确认完成或文件校验失败");
     }
     for(int i=0;i<files.size();i++)addHistory("发送",files.get(i).name,files.get(i).size,d.name,uriSnapshot.get(i).toString());
-    runOnUiThread(()->{progress.dismiss();Toast.makeText(this,"发送成功："+d.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();});
-   }catch(Exception e){runOnUiThread(()->{progress.dismiss();if(cancelRequested.get()){Toast.makeText(this,"已取消发送",Toast.LENGTH_SHORT).show();}else{new AlertDialog.Builder(this).setTitle("发送失败").setMessage(e.getMessage()==null?"传输中断":e.getMessage()).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(d)).show();}});}
+    runOnUiThread(()->{progress.dismiss();TransferForegroundService.stop(this);Toast.makeText(this,"发送成功："+d.name+"（文件完整性校验已通过）",Toast.LENGTH_LONG).show();});
+   }catch(Exception e){runOnUiThread(()->{progress.dismiss();TransferForegroundService.stop(this);if(cancelRequested.get()){Toast.makeText(this,"已取消发送",Toast.LENGTH_SHORT).show();}else{new AlertDialog.Builder(this).setTitle("发送失败").setMessage(e.getMessage()==null?"传输中断":e.getMessage()).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(d)).show();}});}
    finally{for(File file:cacheFiles)try{if(file.exists())file.delete();}catch(Exception ignored){}}
   });
  }
