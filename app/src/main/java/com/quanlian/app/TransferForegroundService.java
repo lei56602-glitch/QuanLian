@@ -115,6 +115,7 @@ public class TransferForegroundService extends Service {
         };
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_UPDATE);
+        filter.addAction(ACTION_CANCEL);
         filter.addAction(ACTION_STOP);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(commandReceiver, filter);
