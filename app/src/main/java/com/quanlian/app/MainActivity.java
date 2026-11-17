@@ -156,7 +156,8 @@ public class MainActivity extends Activity {
   }
   Button clear=btn("清空历史记录",0xff304b70);clear.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("清空历史记录").setMessage("只清除记录，不会删除已传输的文件。").setNegativeButton("取消",null).setPositiveButton("清空",(a,b)->{getSharedPreferences("transfer_history",MODE_PRIVATE).edit().clear().apply();historyPage();}).show());l.addView(clear);install(l);
  }
-\n private String etaText(long seconds){if(seconds<60)return seconds+" 秒";if(seconds<3600)return (seconds/60)+" 分钟 "+(seconds%60)+" 秒";return (seconds/3600)+" 小时 "+((seconds%3600)/60)+" 分钟";}
+
+ private String etaText(long seconds){if(seconds<60)return seconds+" 秒";if(seconds<3600)return (seconds/60)+" 分钟 "+(seconds%60)+" 秒";return (seconds/3600)+" 小时 "+((seconds%3600)/60)+" 分钟";}
  private static String hex(byte[] bytes){StringBuilder b=new StringBuilder(bytes.length*2);for(byte v:bytes)b.append(String.format(Locale.US,"%02x",v&0xff));return b.toString();}
  private void home(){
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
