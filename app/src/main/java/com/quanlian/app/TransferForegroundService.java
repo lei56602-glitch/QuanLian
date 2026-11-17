@@ -44,7 +44,7 @@ public class TransferForegroundService extends Service {
         context.sendBroadcast(intent);
     }
 
-    @Override public void onCreate() {
+    @Override @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag") public void onCreate() {
         super.onCreate();
         createChannel();
         commandReceiver = new BroadcastReceiver() {
