@@ -11,4 +11,4 @@
 
 当前处于开发初期，功能以实际构建和设备测试结果为准。
 
-<!-- Trigger signed release verification after signing secrets setup. -->
+<!-- Trigger signed release verification after correcting signing alias. -->
