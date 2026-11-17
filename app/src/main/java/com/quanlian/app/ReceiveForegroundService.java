@@ -1,6 +1,7 @@
 package com.quanlian.app;
 
 import android.app.*;
+import android.annotation.SuppressLint;
 import android.content.*;
 import android.net.Uri;
 import android.net.nsd.*;
@@ -44,6 +45,7 @@ public class ReceiveForegroundService extends Service {
         Intent i=new Intent(ACTION_DECISION).setPackage(c.getPackageName());
         i.putExtra(EXTRA_ID,id);i.putExtra(EXTRA_ACCEPT,accept);c.sendBroadcast(i);
     }
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(){
         super.onCreate();
         NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
