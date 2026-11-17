@@ -20,10 +20,12 @@ public class ReceiveForegroundService extends Service {
     public static final String ACTION_INCOMING="com.quanlian.app.receive.INCOMING";
     public static final String ACTION_DECISION="com.quanlian.app.receive.DECISION";
     public static final String ACTION_STATUS="com.quanlian.app.receive.STATUS";
-    public static final String EXTRA_ID="request_id", EXTRA_ACCEPT="accept", EXTRA_SENDER="sender", EXTRA_COUNT="count", EXTRA_TOTAL="total", EXTRA_PORT="port", EXTRA_TEXT="text";
+    public static final String EXTRA_ID="request_id", EXTRA_ACCEPT="accept", EXTRA_SENDER="sender", EXTRA_COUNT="count", EXTRA_TOTAL="total", EXTRA_PORT="port", EXTRA_TEXT="text", EXTRA_PROGRESS="progress";
     private static final String TYPE="_quanlian._tcp.", CHANNEL="quanlian_receive";
     private static final int NOTIFICATION_ID=2102, BUF=65536;
-    private final ExecutorService clients=Executors.newFixedThreadPool(2);
+    private final ExecutorService clients=Executors.newCachedThreadPool();
+    private final Set<Socket> activeSockets=ConcurrentHashMap.newKeySet();
+    private PowerManager.WakeLock receiveWakeLock;
     private final Handler main=new Handler(Looper.getMainLooper());
     private volatile boolean running=true;
     private ServerSocket server;
@@ -71,7 +73,7 @@ public class ReceiveForegroundService extends Service {
             server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",0));
             int port=server.getLocalPort();publish(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
-            while(running){Socket s=server.accept();s.setSoTimeout(180000);clients.execute(()->receive(s));}
+            while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
         }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
     }
     private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","");}
@@ -82,11 +84,12 @@ public class ReceiveForegroundService extends Service {
         }catch(Exception e){broadcastStatus("设备广播启动失败",-1);}
     }
     private void receive(Socket socket){
+        acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
             if(!"QUANLIAN2".equals(in.readUTF()))throw new IOException("传输协议不匹配");
-            String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
+            String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
-            for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(size<0||hash.length()!=64||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
+            for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pending=request;
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
@@ -99,19 +102,21 @@ public class ReceiveForegroundService extends Service {
                 File tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");MessageDigest digest=MessageDigest.getInstance("SHA-256");long left=sizes.get(x);
                 try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
-                Uri saved=saveFile(tmp,safe);tmp.delete();if(saved==null)throw new IOException("无法保存文件："+safe);
-                addHistory(safe,sizes.get(x),sender,saved.toString());
+                Uri saved;try{saved=saveFile(tmp,safe);}finally{if(tmp.exists())tmp.delete();}if(saved==null)throw new IOException("无法保存文件："+safe);
+                addHistory(safe,sizes.get(x),sender,saved.toString());broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
         }catch(Exception e){broadcastStatus("接收失败："+e.getMessage(),port());}
+        finally{releaseReceiveWakeLock();}
     }
     private int port(){return server==null?-1:server.getLocalPort();}
     private Uri saveFile(File src,String name)throws Exception{
         if(Build.VERSION.SDK_INT>=29){
             ContentValues v=new ContentValues();v.put(MediaStore.MediaColumns.DISPLAY_NAME,name);v.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");v.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");v.put(MediaStore.MediaColumns.IS_PENDING,1);
             Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(u==null)return null;
-            try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+            try{try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             v.clear();v.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,v,null,null);return u;
+            }catch(Exception e){try{getContentResolver().delete(u,null,null);}catch(Exception ignored){}throw e;}
         }
         File dir=new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),"小李全联");
         if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建下载目录");
@@ -123,10 +128,14 @@ public class ReceiveForegroundService extends Service {
         try{SharedPreferences p=getSharedPreferences("transfer_history",MODE_PRIVATE);JSONArray old=new JSONArray(p.getString("items","[]")),next=new JSONArray();JSONObject o=new JSONObject();o.put("direction","接收");o.put("name",name);o.put("size",size);o.put("peer",peer);o.put("time",System.currentTimeMillis());o.put("uri",uri);next.put(o);for(int i=0;i<old.length()&&i<199;i++)next.put(old.getJSONObject(i));p.edit().putString("items",next.toString()).apply();}catch(Exception ignored){}
     }
     private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format(Locale.US,"%02x",x&255));return s.toString();}
-    private void broadcastStatus(String text,int port){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);sendBroadcast(i);}
+    private void acquireReceiveWakeLock(){try{PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);if(pm!=null){if(receiveWakeLock==null)receiveWakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"QuanLian:Receive");if(!receiveWakeLock.isHeld())receiveWakeLock.acquire(6*60*60*1000L);}}catch(Exception ignored){}}
+    private void releaseReceiveWakeLock(){try{if(receiveWakeLock!=null&&receiveWakeLock.isHeld())receiveWakeLock.release();}catch(RuntimeException ignored){}}
+    private void broadcastStatus(String text,int port){broadcastStatus(text,port,-1);}
+    private void broadcastStatus(String text,int port,int progress){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);if(progress>=0)i.putExtra(EXTRA_PROGRESS,progress);sendBroadcast(i);}
     @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
     @Override public void onDestroy(){
         running=false;try{if(server!=null)server.close();}catch(Exception ignored){}
+        for(Socket socket:activeSockets){try{socket.close();}catch(Exception ignored){}}activeSockets.clear();releaseReceiveWakeLock();
         try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}
         try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}
         try{if(decisions!=null)unregisterReceiver(decisions);}catch(Exception ignored){}
