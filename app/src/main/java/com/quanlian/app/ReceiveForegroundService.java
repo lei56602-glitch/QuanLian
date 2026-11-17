@@ -33,7 +33,7 @@ public class ReceiveForegroundService extends Service {
     private NsdManager.RegistrationListener registration;
     private WifiManager.MulticastLock multicastLock;
     private BroadcastReceiver decisions;
-    private volatile PendingRequest pending;
+    private final ConcurrentMap<String,PendingRequest> pendingRequests=new ConcurrentHashMap<>();
     private static class PendingRequest {
         final String id; final CountDownLatch latch=new CountDownLatch(1); volatile boolean accepted;
         PendingRequest(String value){id=value;}
@@ -60,7 +60,7 @@ public class ReceiveForegroundService extends Service {
         if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION_ID,n,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
         else startForeground(NOTIFICATION_ID,n);
         decisions=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
-            PendingRequest p=pending;if(p!=null&&p.id.equals(i.getStringExtra(EXTRA_ID))){p.accepted=i.getBooleanExtra(EXTRA_ACCEPT,false);p.latch.countDown();}
+            PendingRequest p=pendingRequests.get(i.getStringExtra(EXTRA_ID));if(p!=null){p.accepted=i.getBooleanExtra(EXTRA_ACCEPT,false);p.latch.countDown();}
         }};
         IntentFilter f=new IntentFilter(ACTION_DECISION);
         if(Build.VERSION.SDK_INT>=33)registerReceiver(decisions,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(decisions,f);
@@ -90,10 +90,10 @@ public class ReceiveForegroundService extends Service {
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
-            PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pending=request;
+            PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
-            if(pending==request)pending=null;
+            pendingRequests.remove(request.id);
             out.writeBoolean(accepted);out.flush();if(!accepted)return;
             File dir=new File(getCacheDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
             byte[] buf=new byte[BUF];
@@ -128,7 +128,7 @@ public class ReceiveForegroundService extends Service {
         try{SharedPreferences p=getSharedPreferences("transfer_history",MODE_PRIVATE);JSONArray old=new JSONArray(p.getString("items","[]")),next=new JSONArray();JSONObject o=new JSONObject();o.put("direction","接收");o.put("name",name);o.put("size",size);o.put("peer",peer);o.put("time",System.currentTimeMillis());o.put("uri",uri);next.put(o);for(int i=0;i<old.length()&&i<199;i++)next.put(old.getJSONObject(i));p.edit().putString("items",next.toString()).apply();}catch(Exception ignored){}
     }
     private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format(Locale.US,"%02x",x&255));return s.toString();}
-    private void acquireReceiveWakeLock(){try{PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);if(pm!=null){if(receiveWakeLock==null)receiveWakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"QuanLian:Receive");if(!receiveWakeLock.isHeld())receiveWakeLock.acquire(6*60*60*1000L);}}catch(Exception ignored){}}
+    private void acquireReceiveWakeLock(){try{PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);if(pm!=null){if(receiveWakeLock==null){receiveWakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"QuanLian:Receive");receiveWakeLock.setReferenceCounted(true);}receiveWakeLock.acquire(6*60*60*1000L);}}catch(Exception ignored){}}
     private void releaseReceiveWakeLock(){try{if(receiveWakeLock!=null&&receiveWakeLock.isHeld())receiveWakeLock.release();}catch(RuntimeException ignored){}}
     private void broadcastStatus(String text,int port){broadcastStatus(text,port,-1);}
     private void broadcastStatus(String text,int port,int progress){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);if(progress>=0)i.putExtra(EXTRA_PROGRESS,progress);sendBroadcast(i);}
