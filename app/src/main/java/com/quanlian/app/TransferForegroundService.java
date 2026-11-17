@@ -300,7 +300,10 @@ public class TransferForegroundService extends Service {
     }
 
     private void releaseWakeLock() {
-        releaseWakeLock();
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        } catch (RuntimeException ignored) { }
+        wakeLock = null;
     }
 
     private void createChannel() {
