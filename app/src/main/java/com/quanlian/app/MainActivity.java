@@ -137,7 +137,7 @@ public class MainActivity extends Activity {
  
  private Uri publishReceivedFile(File source,String name)throws Exception{
   if(Build.VERSION.SDK_INT>=29){
-   ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,getContentResolver().getType(Uri.parse("content://media/external/downloads")))==null?"application/octet-stream":"application/octet-stream");values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");values.put(MediaStore.MediaColumns.IS_PENDING,1);
+   ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");values.put(MediaStore.MediaColumns.IS_PENDING,1);
    Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(uri==null)return null;
    try(OutputStream out=getContentResolver().openOutputStream(uri);InputStream in=new FileInputStream(source)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
    values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(uri,values,null,null);return uri;
