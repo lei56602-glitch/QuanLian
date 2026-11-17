@@ -41,7 +41,7 @@ public class TransferForegroundService extends Service {
     public static final String EXTRA_SUCCESS = "transfer_success";
     public static final String EXTRA_CANCELLED = "transfer_cancelled";
     public static final String EXTRA_ERROR = "transfer_error";
-    private static final String EXTRA_TEXT = "notification_text";
+    public static final String EXTRA_TEXT = "notification_text";
     private PowerManager.WakeLock wakeLock;
     private String currentText = "正在进行文件传输…";
     private BroadcastReceiver commandReceiver;
