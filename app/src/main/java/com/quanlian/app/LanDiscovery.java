@@ -92,13 +92,28 @@ public final class LanDiscovery {
 
     public static void announce(String id,String name,int transferPort){
         if(id==null||id.length()<8||name==null||name.isEmpty()||transferPort<1||transferPort>65535)return;
-        try(MulticastSocket socket=new MulticastSocket()){
-            socket.setTimeToLive(1);
+        try{
             JSONObject json=new JSONObject();
             json.put("app",APP);json.put("v",VERSION);json.put("id",id);json.put("name",name);json.put("port",transferPort);
             byte[] data=json.toString().getBytes(StandardCharsets.UTF_8);
-            DatagramPacket packet=new DatagramPacket(data,data.length,InetAddress.getByName(GROUP),PORT);
-            socket.send(packet);
+            try(MulticastSocket socket=new MulticastSocket()){
+                socket.setTimeToLive(1);
+                socket.setBroadcast(true);
+                socket.send(new DatagramPacket(data,data.length,InetAddress.getByName(GROUP),PORT));
+                // Broadcast is a fallback for access points that suppress multicast.
+                socket.send(new DatagramPacket(data,data.length,InetAddress.getByName("255.255.255.255"),PORT));
+                try{
+                    java.util.Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
+                    while(interfaces!=null&&interfaces.hasMoreElements()){
+                        NetworkInterface network=interfaces.nextElement();
+                        if(!network.isUp()||network.isLoopback())continue;
+                        for(InterfaceAddress address:network.getInterfaceAddresses()){
+                            InetAddress broadcast=address.getBroadcast();
+                            if(broadcast!=null)try{socket.send(new DatagramPacket(data,data.length,broadcast,PORT));}catch(Exception ignored){}
+                        }
+                    }
+                }catch(Exception ignored){}
+            }
         }catch(Exception e){
             Log.w(TAG,"Could not send UDP discovery announcement",e);
         }
