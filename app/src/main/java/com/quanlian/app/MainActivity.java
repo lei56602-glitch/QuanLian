@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
   }
   registerReceiveReceiver();
   startLan();
-  restorePage();
+  restorePage();\n  handleIncomingShare(getIntent());
  }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
  private void restorePage(){switch(page){case 6:settingsPage();break;case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:home();}}
@@ -344,11 +344,43 @@ public class MainActivity extends Activity {
  private void addHistory(String direction,String name,long size,String peer,String uri){
   try{android.content.SharedPreferences p=getSharedPreferences("transfer_history",MODE_PRIVATE);JSONArray old=new JSONArray(p.getString("items","[]"));JSONArray next=new JSONArray();JSONObject item=new JSONObject();item.put("direction",direction);item.put("name",name);item.put("size",size);item.put("peer",peer);item.put("time",System.currentTimeMillis());item.put("uri",uri);next.put(item);for(int i=0;i<old.length()&&i<199;i++)next.put(old.getJSONObject(i));p.edit().putString("items",next.toString()).apply();}catch(Exception ignored){}
  }
+ private String mimeForName(String name){String lower=name==null?"":name.toLowerCase(Locale.ROOT);if(lower.endsWith(".apk"))return "application/vnd.android.package-archive";String mime=java.net.URLConnection.guessContentTypeFromName(name==null?"":name);return mime==null?"application/octet-stream":mime;}
+ private void openReceivedFile(String rawUri,String name){
+  try{
+   Uri uri=Uri.parse(rawUri);
+   if("file".equalsIgnoreCase(uri.getScheme()))uri=androidx.core.content.FileProvider.getUriForFile(this,getPackageName()+".fileprovider",new File(uri.getPath()));
+   String mime=mimeForName(name);
+   if(name!=null&&name.toLowerCase(Locale.ROOT).endsWith(".apk")){
+    if(Build.VERSION.SDK_INT>=26&&!getPackageManager().canRequestPackageInstalls()){
+     Intent settings=new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName()));startActivity(settings);
+     Toast.makeText(this,"请允许小李全联安装应用，然后返回历史记录再次点击安装",Toast.LENGTH_LONG).show();return;
+    }
+    Intent install=new Intent(Intent.ACTION_INSTALL_PACKAGE);install.setDataAndType(uri,"application/vnd.android.package-archive");install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(install);
+   }else{
+    String actual=getContentResolver().getType(uri);if(actual==null||"application/octet-stream".equals(actual))actual=mime;
+    Intent view=new Intent(Intent.ACTION_VIEW);view.setDataAndType(uri,actual);view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);
+   }
+  }catch(Exception e){Toast.makeText(this,"无法打开文件："+e.getMessage(),Toast.LENGTH_LONG).show();}
+ }
+ private void handleIncomingShare(Intent intent){
+  if(intent==null)return;String action=intent.getAction();int before=uris.size();
+  try{
+   if(Intent.ACTION_SEND_MULTIPLE.equals(action)){
+    ArrayList<Uri> shared=intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);if(shared!=null)for(Uri uri:shared)if(uri!=null)addFile(uri);
+   }else if(Intent.ACTION_SEND.equals(action)){
+    Uri shared=intent.getParcelableExtra(Intent.EXTRA_STREAM);if(shared!=null)addFile(shared);
+    else{CharSequence text=intent.getCharSequenceExtra(Intent.EXTRA_TEXT);if(text!=null&&text.length()>0)addTextAsFile(text.toString(),"分享文本.txt");}
+   }
+   if(intent.getClipData()!=null)for(int i=0;i<intent.getClipData().getItemCount();i++){Uri u=intent.getClipData().getItemAt(i).getUri();if(u!=null)addFile(u);}
+  }catch(Exception e){android.util.Log.w("QuanLianShare","Unable to import shared content",e);}
+  if(uris.size()>before){page=1;sendPage();}
+ }
+ @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);handleIncomingShare(intent);}
  private void historyPage(){
   page=4;LinearLayout l=col();l.setBackgroundColor(pageBackground());lightHeader(l,"传输历史记录","查看已发送和已接收的文件");JSONArray items;try{items=new JSONArray(getSharedPreferences("transfer_history",MODE_PRIVATE).getString("items","[]"));}catch(Exception e){items=new JSONArray();}
   if(items.length()==0)l.addView(txt("暂时没有传输记录",14,0xff8491a8,false));
   for(int i=0;i<items.length();i++){JSONObject o=items.optJSONObject(i);if(o==null)continue;LinearLayout item=homeCard();item.setPadding(dp(15),dp(11),dp(15),dp(11));String name=o.optString("name","文件");String direction=o.optString("direction","");String peer=o.optString("peer","");long size=o.optLong("size",0);long time=o.optLong("time",0);item.addView(homeText((direction.equals("接收")?"↓ 已接收  ":"↑ 已发送  ")+name,14,0xff1b2947,true));gap(item,3);item.addView(homeText(sizeText(size)+" · "+peer,11,0xff71809e,false));gap(item,2);item.addView(homeText(new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.getDefault()).format(new Date(time)),10,0xff91a0b5,false));
-   if(direction.equals("接收")){Button open=btn("打开文件",0xff1f77dc);String uri=o.optString("uri","");open.setOnClickListener(v->{try{Uri u=Uri.parse(uri);Intent intent=new Intent(Intent.ACTION_VIEW);intent.setDataAndType(u,getContentResolver().getType(u));intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(intent);}catch(Exception e){Toast.makeText(this,"暂时无法打开，请到手机文件管理的 Download/小李全联 查找",Toast.LENGTH_LONG).show();}});item.addView(open);}
+   if(direction.equals("接收")){Button open=btn("打开文件",0xff1f77dc);String uri=o.optString("uri","");open.setOnClickListener(v->openReceivedFile(uri,name));item.addView(open);}
    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(7);l.addView(item,p);
   }
   Button clear=btn("清空历史记录",0xff304b70);clear.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("清空历史记录").setMessage("只清除记录，不会删除已传输的文件。").setNegativeButton("取消",null).setPositiveButton("清空",(a,b)->{getSharedPreferences("transfer_history",MODE_PRIVATE).edit().clear().apply();historyPage();}).show());l.addView(clear);install(l);
