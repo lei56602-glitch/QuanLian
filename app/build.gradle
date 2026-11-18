@@ -28,6 +28,10 @@ android {
             if (System.getenv('RELEASE_KEYSTORE_PATH') != null) signingConfig signingConfigs.release
         }
     }
+    dependencies {
+        implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+        implementation 'org.bouncycastle:bcpkix-jdk18on:1.80'
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
