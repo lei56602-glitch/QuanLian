@@ -87,20 +87,34 @@ public class MainActivity extends Activity {
   ReceiveForegroundService.start(this);
   discoveryHandler.post(pruneDevices);
   try{WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);lock=w.createMulticastLock("QuanLianLAN");lock.setReferenceCounted(false);lock.acquire();}catch(Exception ignored){}
-  udpDiscovery=LanDiscovery.listen(announcement->{
-   if(!alive||announcement==null||announcement.host==null||announcement.port<1||myName().equals(announcement.name))return;
-   runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到设备广播，正在验证加密身份…");});
-   workers.execute(()->{
-    String verifyError=LanDiscovery.verifyDetailed(this,announcement.host,announcement.port,announcement.fingerprint);
-    if(verifyError!=null){
-     android.util.Log.e("QuanLianDiscovery","广播已收到但验证失败：host="+announcement.host.getHostAddress()+", port="+announcement.port+"；"+verifyError);
-     runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到对方广播，但连接验证失败："+verifyError);});
-     return;
-    }
-    runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
+   udpDiscovery=LanDiscovery.listen(announcement->{
+    if(!alive||announcement==null||announcement.host==null||announcement.port<1)return;
+    // UDP discovery is independent from TCP/TLS. Show a valid peer immediately;
+    // secure identity and TLS are checked when the user actually connects.
+    if(DeviceIdentity.id(this).equals(announcement.id))return;
+    android.util.Log.i("QuanLianDiscovery","UDP peer discovered id="+announcement.id
+      +", name="+announcement.name+", source="+announcement.host.getHostAddress()
+      +", tcpPort="+announcement.port+", fingerprint="+announcement.fingerprint);
+    runOnUiThread(()->{
+     if(!alive)return;
+     synchronized(devices){
+      Device device=devices.get(announcement.id);
+      if(device==null){
+       device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);
+       devices.put(device.key,device);
+      }
+      device.name=announcement.name;
+      device.host=announcement.host;
+      device.port=announcement.port;
+      device.fingerprint=announcement.fingerprint;
+      device.udpSeen=true;
+      device.udpLastSeen=android.os.SystemClock.elapsedRealtime();
+     }
+     if(deviceStatus!=null)deviceStatus.setText("已通过 UDP 发现附近设备；连接时再验证安全身份");
+     refreshDevices();
+    });
    });
-  });
-  new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive&&nsd!=null)discover();},900);
+   new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive&&nsd!=null)discover();},900);
   discoveryHandler.postDelayed(()->{if(alive)runActiveLanScan();},1800);
  }
  private void runActiveLanScan(){
