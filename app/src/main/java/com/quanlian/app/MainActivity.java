@@ -160,7 +160,7 @@ public class MainActivity extends Activity {
       final String key=deviceId, resolvedName=info.getServiceName(), resolvedFp=fp;
       final InetAddress resolvedHost=chosen;final int resolvedPort=info.getPort();
       workers.execute(()->{
-       String error=LanDiscovery.verifyDetailed(this,resolvedHost,resolvedPort,resolvedFp);
+       String error=LanDiscovery.verifyDetailed(MainActivity.this,resolvedHost,resolvedPort,resolvedFp);
        if(error!=null){android.util.Log.e("QuanLianDiscovery","NSD 设备未通过连接验证："+resolvedHost+":"+resolvedPort+"；"+error);runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("发现设备但连接验证失败："+error);});return;}
        runOnUiThread(()->{if(!alive)return;synchronized(devices){Device device=devices.get(key);if(device==null){device=new Device(resolvedName,key,resolvedHost,resolvedPort,resolvedFp);devices.put(key,device);}device.name=resolvedName;device.host=resolvedHost;device.port=resolvedPort;device.fingerprint=resolvedFp;device.nsdSeen=true;}refreshDevices();});
       });
