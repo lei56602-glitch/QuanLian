@@ -219,7 +219,9 @@ public class ReceiveForegroundService extends Service {
         String customTree=prefs.getString("save_tree_uri","");
         if(customTree!=null&&!customTree.isEmpty()){
             Uri tree=Uri.parse(customTree);
-            Uri target=android.provider.DocumentsContract.createDocument(getContentResolver(),tree,mime,name);
+            String treeDocumentId=android.provider.DocumentsContract.getTreeDocumentId(tree);
+            Uri parentDocument=android.provider.DocumentsContract.buildDocumentUriUsingTree(tree,treeDocumentId);
+            Uri target=android.provider.DocumentsContract.createDocument(getContentResolver(),parentDocument,mime,name);
             if(target==null)throw new IOException("无法在自定义目录创建文件");
             try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){
                 if(out==null)throw new IOException("无法写入自定义保存目录");copy(in,out);
