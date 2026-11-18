@@ -64,7 +64,53 @@ public class MainActivity extends Activity {
    {"接收","Receive"},{"发送","Send"},{"添加文件，然后点击目标设备即可发送","Add files, then tap a device to send"},{"文件预览","File preview"},{"添加文件","Add files"},{"已添加 ","Added "},{" 个文件 · "," files · "},{"还没有文件，点击「添加文件」开始选择","No files yet. Tap “Add files” to get started"},{"目标设备","Target devices"},{"刷新设备","Refresh devices"},{"正在搜索附近设备…","Searching for nearby devices…"},{"发现 ","Found "},{" 台附近设备"," nearby devices"},{"暂未发现设备。请让双方打开小李全联并连接同一 Wi-Fi。","No devices found. Open Xiao Li Quan Lian on both devices and connect to the same Wi-Fi."},{"点击设备发送","Tap a device to send"},{"请先添加要发送的文件","Please add files before sending"},{"已收藏设备","Device added to favorites"},{"收藏设备","Favorite devices"},{"暂无收藏设备","No favorite devices"},{"删除","Remove"},{"发送方：","Sender: "},{"文件总数：","Files: "},{"文件总大小：","Total size: "},{"接受","Accept"},{"拒绝","Decline"},{"设置已保存","Settings saved"},{"接收文件请求","Incoming file request"},
    {"大小未知","Unknown size"},{"文件","File"},{"已接收","Received"},{"已发送","Sent"},{"打开文件","Open file"},{"暂时无法打开，请到手机文件管理的 Download/小李全联 查找","Unable to open. Check Download/Xiao Li Quan Lian in your file manager."},
    {"操作步骤","Steps"},{"两台手机都安装带有此功能的版本。","Install this version on both phones."},{"复制完整日志","Copy full log"},{"分享 / 导出日志","Share / Export logs"},{"清空旧日志","Clear old logs"},{"日志已复制，可以直接粘贴发送","Logs copied. You can paste and send them."},{"旧日志已清空","Old logs cleared"},{"注意：两台手机都要导出。只有发送端日志，无法完整判断接收端是否收到连接。","Note: Export logs from both phones. Sender logs alone cannot confirm whether the receiver got the connection."},
-   {"正在准备文件并计算校验值…","Preparing files and calculating checksums…"},{"小李全联正在发送","Xiao Li Quan Lian is sending"},{"发送成功","Sent successfully"},{"发送失败","Send failed"},{"重新发送","Retry"},{"知道了","Got it"},{"正在连接","Connecting"},{"已取消","Cancelled"},{"传输完成","Transfer complete"},{"发送成功！","Transfer successful!"}
+   {"正在准备文件并计算校验值…","Preparing files and calculating checksums…"},{"小李全联正在发送","Xiao Li Quan Lian is sending"},{"发送成功","Sent successfully"},{"发送失败","Send failed"},{"重新发送","Retry"},{"知道了","Got it"},{"正在连接","Connecting"},{"已取消","Cancelled"},{"传输完成","Transfer complete"},{"发送成功！","Transfer successful!"},
+   {"通用","General"},
+   {"主题","Theme"},
+   {"跟随系统","Follow system"},
+   {"浅色","Light"},
+   {"深色","Dark"},
+   {"颜色","Color"},
+   {"蓝色","Blue"},
+   {"绿色","Green"},
+   {"紫色","Purple"},
+   {"橙色","Orange"},
+   {"语言","Language"},
+   {"动画效果","Animations"},
+   {"字体大小","Font size"},
+   {"接收","Receive"},
+   {"自动保存","Auto save"},
+   {"保存目录：","Save folder: "},
+   {"已选择自定义目录","Custom folder selected"},
+   {"保存到相册（图片、视频）","Save images and videos to gallery"},
+   {"自动完成传输任务","Auto-accept transfers"},
+   {"保存到历史记录","Save transfer history"},
+   {"设备","Device"},
+   {"设备名称","Device name"},
+   {"保存设备名称","Save device name"},
+   {"其他","Other"},
+   {"关于页面","About"},
+   {"捐赠入口","Donate"},
+   {"隐私政策","Privacy policy"},
+   {"高级设置","Advanced settings"},
+   {"保存通用与接收设置","Save settings"},
+   {"文件","File"},
+   {"媒体","Media"},
+   {"剪贴板","Clipboard"},
+   {"文本","Text"},
+   {"文件夹","Folder"},
+   {"应用","Apps"},
+   {"发送方式","Send method"},
+   {"单个接收者","Single recipient"},
+   {"多个接收者","Multiple recipients"},
+   {"通过连接分享","Share via connection"},
+   {"选择多个接收者","Choose multiple recipients"},
+   {"添加到发送列表","Add to send queue"},
+   {"已保存 ","Saved "},
+   {"个接收设备"," recipients"},
+   {"输入附近设备显示的名称","Name shown to nearby devices"},
+   {"感谢支持","Thanks for your support"},
+   {"无法打开文件：","Unable to open file: "}
   };
   for(String[] p:m)if(p[0].equals(s))return p[1];
   if(s.startsWith("已添加 "))return "Added "+s.substring(4);
@@ -79,7 +125,7 @@ public class MainActivity extends Activity {
  private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);int horizontal=widthDp<360?14:(widthDp<600?20:32);l.setPadding(dp(horizontal),dp(widthDp<600?18:24),dp(horizontal),dp(widthDp<600?18:24));return l;}
  private LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(16),dp(16),dp(16));l.setBackground(focusBackground(Color.rgb(28,45,75),0xff345b86,18));l.setFocusable(true);l.setFocusableInTouchMode(false);l.setClickable(true);return l;}
  private void gap(LinearLayout l,int h){l.addView(new View(this),new LinearLayout.LayoutParams(1,dp(h)));}
- private Button btn(String s,int c){Button b=new Button(this);b.setText(ui(s));b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
+ private Button btn(String s,int c){if(c==0xff2878f5||c==0xff1f77dc)c=accentColor();Button b=new Button(this);b.setText(ui(s));b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
  private void install(LinearLayout l){int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);ScrollView s=new ScrollView(this);s.setFillViewport(true);s.setFocusable(false);if(widthDp>=700){FrameLayout frame=new FrameLayout(this);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.min(widthDp,1200)*((int)getResources().getDisplayMetrics().density),-1,Gravity.CENTER);s.addView(l,new ScrollView.LayoutParams(-1,-2));frame.addView(s,p);setContentView(frame);}else{s.addView(l);setContentView(s);}if(widthDp>=700){l.setPadding(dp(32),dp(28),dp(32),dp(28));}final int baseLeft=l.getPaddingLeft(),baseTop=l.getPaddingTop(),baseRight=l.getPaddingRight(),baseBottom=l.getPaddingBottom();l.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();v.setPadding(baseLeft,baseTop+top,baseRight,baseBottom);return insets;});l.requestApplyInsets();l.post(()->{ArrayList<View> focusables=l.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty()&&!focusables.get(0).hasFocus())focusables.get(0).requestFocus();});}
   private void installFlow(LinearLayout content,int selected){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(pageBackground());ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));root.addView(flowNav(selected),new LinearLayout.LayoutParams(-1,-2));root.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();int bottom=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom:insets.getSystemWindowInsetBottom();v.setPadding(0,top,0,bottom);return insets;});setContentView(root);root.requestApplyInsets();}
   private LinearLayout flowNav(int selected){LinearLayout nav=new LinearLayout(this);nav.setGravity(Gravity.CENTER);nav.setPadding(dp(10),dp(5),dp(10),dp(5));nav.setBackgroundColor(surfaceColor());nav.setElevation(dp(10));String[] labels={"接收","发送","设置"};String[] icons={"↓","↗","⚙"};for(int i=0;i<labels.length;i++){final int index=i;TextView item=homeText(icons[i]+"  "+labels[i],13,i==selected?0xff1769e8:0xff74839a,i==selected);item.setGravity(Gravity.CENTER);item.setPadding(dp(6),dp(13),dp(6),dp(13));item.setBackground(i==selected?shape(0xffedf4ff,18):shape(Color.TRANSPARENT,18));item.setOnClickListener(v->{if(index==0)receivePage();else if(index==1)sendPage();else settingsPage();});nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));}return nav;}
@@ -366,13 +412,14 @@ public class MainActivity extends Activity {
  private void handleIncomingShare(Intent intent){
   if(intent==null)return;String action=intent.getAction();int before=uris.size();
   try{
+   boolean usedStream=false;
    if(Intent.ACTION_SEND_MULTIPLE.equals(action)){
-    ArrayList<Uri> shared=intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);if(shared!=null)for(Uri uri:shared)if(uri!=null)addFile(uri);
+    ArrayList<Uri> shared=intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);if(shared!=null){for(Uri uri:shared)if(uri!=null)addFile(uri);usedStream=!shared.isEmpty();}
    }else if(Intent.ACTION_SEND.equals(action)){
-    Uri shared=intent.getParcelableExtra(Intent.EXTRA_STREAM);if(shared!=null)addFile(shared);
+    Uri shared=intent.getParcelableExtra(Intent.EXTRA_STREAM);if(shared!=null){addFile(shared);usedStream=true;}
     else{CharSequence text=intent.getCharSequenceExtra(Intent.EXTRA_TEXT);if(text!=null&&text.length()>0)addTextAsFile(text.toString(),"分享文本.txt");}
    }
-   if(intent.getClipData()!=null)for(int i=0;i<intent.getClipData().getItemCount();i++){Uri u=intent.getClipData().getItemAt(i).getUri();if(u!=null)addFile(u);}
+   if(!usedStream&&intent.getClipData()!=null)for(int i=0;i<intent.getClipData().getItemCount();i++){Uri u=intent.getClipData().getItemAt(i).getUri();if(u!=null)addFile(u);}
   }catch(Exception e){android.util.Log.w("QuanLianShare","Unable to import shared content",e);}
   if(uris.size()>before){page=1;sendPage();}
  }
@@ -544,7 +591,7 @@ public class MainActivity extends Activity {
    installFlow(l,1);
   }
   private void addSendCategory(android.widget.GridLayout grid,String symbol,String label,Runnable action){
-   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(shape(Color.WHITE,16));tile.setFocusable(true);tile.setClickable(true);
+   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(shape(surfaceColor(),16));tile.setFocusable(true);tile.setClickable(true);
    TextView icon=homeText(symbol,22,0xff2878f5,true);icon.setGravity(Gravity.CENTER);tile.addView(icon);gap(tile,6);
    TextView title=homeText(label,13,0xff263957,true);title.setGravity(Gravity.CENTER);tile.addView(title);
    tile.setOnClickListener(v->action.run());
