@@ -73,6 +73,15 @@ public class MainActivity extends Activity {
    });
   });
   new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive&&nsd!=null)discover();},900);
+  discoveryHandler.postDelayed(()->{if(alive)runActiveLanScan();},1800);
+ }
+ private void runActiveLanScan(){
+  if(!alive)return;
+  LanScanner.scan(this,38890,announcement->runOnUiThread(()->{
+   if(!alive||announcement==null||announcement.host==null)return;
+   synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}
+   refreshDevices();
+  }),status->runOnUiThread(()->{if(deviceStatus!=null&&alive&&devices.isEmpty())deviceStatus.setText(status);}));
  }
  @Override protected void onResume(){super.onResume();registerReceiveReceiver();}
  @Override protected void onPause(){unregisterReceiveReceiver();super.onPause();}
@@ -143,6 +152,7 @@ public class MainActivity extends Activity {
   new android.os.Handler(getMainLooper()).postDelayed(()->{
    if(!alive||nsd==null)return;
    discover();
+   runActiveLanScan();
   },600);
  }
  private final Runnable pruneDevices=new Runnable(){@Override public void run(){if(!alive)return;long now=android.os.SystemClock.elapsedRealtime();synchronized(devices){Iterator<Map.Entry<String,Device>> it=devices.entrySet().iterator();while(it.hasNext()){Device d=it.next().getValue();if(d.udpSeen&&now-d.udpLastSeen>9000)d.udpSeen=false;if(!d.udpSeen&&!d.nsdSeen)it.remove();}}refreshDevices();discoveryHandler.postDelayed(this,3000);}};
