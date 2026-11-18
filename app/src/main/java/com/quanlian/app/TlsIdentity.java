@@ -48,7 +48,10 @@ public final class TlsIdentity {
             return plain;
         }
         SSLServerSocket server=(SSLServerSocket)context(null,true).getServerSocketFactory().createServerSocket();
-        server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",port));
+        server.setReuseAddress(true);
+        // Request a larger TCP receive window for high-throughput local Wi-Fi transfers.
+        server.setReceiveBufferSize(4*1024*1024);
+        server.bind(new InetSocketAddress("0.0.0.0",port));
         enableTls12(server);
         return server;
     }
@@ -196,6 +199,10 @@ public final class TlsIdentity {
         SSLContext sslContext=context(selectedTrust,false);
         SSLSocket socket=(SSLSocket)sslContext.getSocketFactory().createSocket();
         try{
+            // Request larger kernel TCP windows; Android may clamp these to device limits.
+            socket.setSendBufferSize(4*1024*1024);
+            socket.setReceiveBufferSize(4*1024*1024);
+            android.util.Log.i("QuanLianSocket","Requested TCP buffers send="+socket.getSendBufferSize()+", receive="+socket.getReceiveBufferSize());
             disableHostnameVerification(socket);
             android.util.Log.d("QuanLianSocket","TLS socket created; target="+peer.getHostAddress()+":"+port);
             stage="TCP_BIND";
