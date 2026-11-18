@@ -144,6 +144,45 @@ public final class TlsIdentity {
         throw new IOException("未找到与对方 "+peer.getHostAddress()+" 同网段的热点/Wi-Fi 接口；为避免误走移动数据，已停止连接");
     }
 
+    private static final class PinnedTrustManager extends X509ExtendedTrustManager {
+        private final byte[] expected;
+        PinnedTrustManager(String fingerprint) throws GeneralSecurityException {
+            this.expected = decodeHex(fingerprint.replace(":", ""));
+        }
+        private void checkPinned(X509Certificate[] chain) throws CertificateException {
+            if (chain == null || chain.length == 0 || chain[0] == null)
+                throw new CertificateException("对端没有提供有效的自签名设备证书");
+            try {
+                byte[] actual = MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded());
+                if (!MessageDigest.isEqual(expected, actual))
+                    throw new CertificateException("设备自签名证书 SHA-256 指纹不匹配");
+                chain[0].checkValidity();
+                android.util.Log.i("QuanLianTLS", "Pinned local self-signed certificate accepted; subject="
+                    + chain[0].getSubjectX500Principal());
+            } catch (CertificateException e) { throw e; }
+            catch (GeneralSecurityException e) { throw new CertificateException("无法验证设备证书指纹", e); }
+        }
+        @Override public void checkServerTrusted(X509Certificate[] c, String a) throws CertificateException { checkPinned(c); }
+        @Override public void checkServerTrusted(X509Certificate[] c, String a, Socket s) throws CertificateException { checkPinned(c); }
+        @Override public void checkServerTrusted(X509Certificate[] c, String a, javax.net.ssl.SSLEngine e) throws CertificateException { checkPinned(c); }
+        @Override public void checkClientTrusted(X509Certificate[] c, String a) throws CertificateException { throw new CertificateException("不启用客户端证书认证"); }
+        @Override public void checkClientTrusted(X509Certificate[] c, String a, Socket s) throws CertificateException { throw new CertificateException("不启用客户端证书认证"); }
+        @Override public void checkClientTrusted(X509Certificate[] c, String a, javax.net.ssl.SSLEngine e) throws CertificateException { throw new CertificateException("不启用客户端证书认证"); }
+        @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+    }
+    private static byte[] decodeHex(String value) throws GeneralSecurityException {
+        if (value == null || !value.matches("(?i)[0-9a-f]{64}"))
+            throw new GeneralSecurityException("无效的设备证书 SHA-256 指纹");
+        byte[] out = new byte[32];
+        for (int i=0;i<out.length;i++) out[i]=(byte)Integer.parseInt(value.substring(i*2,i*2+2),16);
+        return out;
+    }
+    private static void disableHostnameVerification(SSLSocket socket) {
+        SSLParameters parameters = socket.getSSLParameters();
+        parameters.setEndpointIdentificationAlgorithm(null);
+        socket.setSSLParameters(parameters);
+        android.util.Log.d("QuanLianTLS", "Hostname verification disabled; peer identity is checked by pinned SHA-256 certificate");
+    }
     public static Socket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
         InetAddress peer=InetAddress.getByName(host);
         android.util.Log.d("QuanLianSocket","CONNECT begin target="+peer.getHostAddress()+":"+port+", plain="+plainMode(context));
@@ -154,41 +193,20 @@ public final class TlsIdentity {
                 return plain;
             }catch(Exception e){android.util.Log.e("QuanLianSocket","Plain TCP connect failed target="+peer.getHostAddress()+":"+port,e);try{plain.close();}catch(Exception ignored){}throw e;}
         }
-        if(expectedFingerprint==null||expectedFingerprint.length()!=64)throw new SSLPeerUnverifiedException("缺少设备证书指纹");
-        final String expected=expectedFingerprint.replace(":","").toLowerCase(Locale.ROOT);
-        X509TrustManager selectedTrust;
-        if(BuildConfig.DEBUG){
-            // Diagnostic build only: accept any non-empty peer certificate chain so
-            // hotspot connectivity can be isolated from first-use pinning problems.
-            // Release builds always retain strict SHA-256 certificate pinning below.
-            selectedTrust=new X509TrustManager(){
-                public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
-                public void checkClientTrusted(X509Certificate[] chain,String authType)throws CertificateException{throw new CertificateException("Client authentication not configured");}
-                public void checkServerTrusted(X509Certificate[] chain,String authType)throws CertificateException{
-                    if(chain==null||chain.length==0)throw new CertificateException("Empty certificate chain");
-                    android.util.Log.w("QuanLianTLS","DEBUG BUILD ONLY: server certificate pin check bypassed for hotspot diagnosis");
-                }
-            };
-        }else{
-            selectedTrust=new X509TrustManager(){
-                public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
-                public void checkClientTrusted(X509Certificate[] chain,String authType)throws CertificateException{throw new CertificateException("Client authentication not configured");}
-                public void checkServerTrusted(X509Certificate[] chain,String authType)throws CertificateException{
-                    if(chain==null||chain.length==0)throw new CertificateException("Empty certificate chain");
-                    try{String actual=hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));if(!actual.equals(expected))throw new CertificateException("设备证书指纹不匹配");}
-                    catch(GeneralSecurityException e){throw new CertificateException(e);}
-                }
-            };
-        }
+        if(expectedFingerprint==null||!expectedFingerprint.matches("(?i)[0-9a-f]{64}"))
+            throw new SSLPeerUnverifiedException("缺少有效的设备自签名证书指纹");
+        X509TrustManager selectedTrust = new PinnedTrustManager(expectedFingerprint);
         SSLContext sslContext=context(selectedTrust);
         SSLSocket socket=(SSLSocket)sslContext.getSocketFactory().createSocket();
         try{
+            disableHostnameVerification(socket);
             android.util.Log.d("QuanLianSocket","TLS socket created; target="+peer.getHostAddress()+":"+port);
             bindToPeerNetwork(context,socket,peer);
             android.util.Log.d("QuanLianSocket","TCP connect starting; target="+peer.getHostAddress()+":"+port);
             socket.connect(new InetSocketAddress(peer,port),8000);
             android.util.Log.d("QuanLianSocket","TCP connected; target="+peer.getHostAddress()+":"+port+", local="+socket.getLocalAddress().getHostAddress()+", SSLContext="+sslContext.getProtocol());
-            socket.setSoTimeout(12000);enableModern(socket);
+            socket.setSoTimeout(12000);
+            enableModern(socket);
             android.util.Log.d("QuanLianTLS","Handshake starting; target="+peer.getHostAddress()+":"+port+", enabledProtocols="+Arrays.toString(socket.getEnabledProtocols()));
             socket.startHandshake();
             android.util.Log.i("QuanLianTLS","Handshake success; target="+peer.getHostAddress()+":"+port+", negotiated="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());
@@ -208,7 +226,7 @@ public final class TlsIdentity {
         };
         SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
         try(SSLSocket socket=(SSLSocket)ctx.getSocketFactory().createSocket()){
-            InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),2500);socket.setSoTimeout(4000);enableModern(socket);socket.startHandshake();
+            InetAddress peer=InetAddress.getByName(host);disableHostnameVerification(socket);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),2500);socket.setSoTimeout(4000);enableModern(socket);socket.startHandshake();
             java.security.cert.Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
         }
     }
