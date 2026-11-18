@@ -102,6 +102,10 @@ public class ReceiveForegroundService extends Service {
     private void receive(Socket socket){
         acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
+            if(s instanceof javax.net.ssl.SSLSocket){
+                try{((javax.net.ssl.SSLSocket)s).startHandshake();android.util.Log.i("QuanLianTLS","Server-side handshake success peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+", protocol="+((javax.net.ssl.SSLSocket)s).getSession().getProtocol()+", cipher="+((javax.net.ssl.SSLSocket)s).getSession().getCipherSuite());}
+                catch(Exception handshake){android.util.Log.e("QuanLianTLS","Server-side TLS handshake failed peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+"; "+handshake.getClass().getName()+": "+handshake.getMessage(),handshake);throw handshake;}
+            }else android.util.Log.w("QuanLianPlain","Accepted plain TCP session peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+" WITHOUT ENCRYPTION");
             String protocol=in.readUTF();android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
@@ -140,7 +144,7 @@ public class ReceiveForegroundService extends Service {
                 addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
-        }catch(Exception e){android.util.Log.e("QuanLianReceive","TLS/接收会话处理失败",e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
+        }catch(Exception e){android.util.Log.e("QuanLianReceive","接收会话处理失败 mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"),e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
         finally{releaseReceiveWakeLock();}
     }
     private int port(){return server==null?-1:server.getLocalPort();}
