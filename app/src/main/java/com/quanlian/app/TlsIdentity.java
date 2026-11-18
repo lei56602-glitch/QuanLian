@@ -109,17 +109,32 @@ public final class TlsIdentity {
     public static SSLSocket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
         if(expectedFingerprint==null||expectedFingerprint.length()!=64)throw new SSLPeerUnverifiedException("缺少设备证书指纹");
         final String expected=expectedFingerprint.replace(":","").toLowerCase(Locale.ROOT);
-        X509TrustManager pin=new X509TrustManager(){
-            public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
-            public void checkClientTrusted(X509Certificate[] chain,String authType)throws CertificateException{throw new CertificateException("Client authentication not configured");}
-            public void checkServerTrusted(X509Certificate[] chain,String authType)throws CertificateException{
-                if(chain==null||chain.length==0)throw new CertificateException("Empty certificate chain");
-                try{String actual=hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));if(!actual.equals(expected))throw new CertificateException("设备证书指纹不匹配");}
-                catch(GeneralSecurityException e){throw new CertificateException(e);}
-            }
-        };
-        SSLSocket socket=(SSLSocket)context(pin).getSocketFactory().createSocket();
-        try{InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),8000);socket.setSoTimeout(12000);enableModern(socket);socket.startHandshake();return socket;}
+        X509TrustManager selectedTrust;
+        if(BuildConfig.DEBUG){
+            // Diagnostic build only: accept any non-empty peer certificate chain so
+            // hotspot connectivity can be isolated from first-use pinning problems.
+            // Release builds always retain strict SHA-256 certificate pinning below.
+            selectedTrust=new X509TrustManager(){
+                public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
+                public void checkClientTrusted(X509Certificate[] chain,String authType)throws CertificateException{throw new CertificateException("Client authentication not configured");}
+                public void checkServerTrusted(X509Certificate[] chain,String authType)throws CertificateException{
+                    if(chain==null||chain.length==0)throw new CertificateException("Empty certificate chain");
+                    android.util.Log.w("QuanLianTLS","DEBUG BUILD ONLY: server certificate pin check bypassed for hotspot diagnosis");
+                }
+            };
+        }else{
+            selectedTrust=new X509TrustManager(){
+                public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
+                public void checkClientTrusted(X509Certificate[] chain,String authType)throws CertificateException{throw new CertificateException("Client authentication not configured");}
+                public void checkServerTrusted(X509Certificate[] chain,String authType)throws CertificateException{
+                    if(chain==null||chain.length==0)throw new CertificateException("Empty certificate chain");
+                    try{String actual=hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));if(!actual.equals(expected))throw new CertificateException("设备证书指纹不匹配");}
+                    catch(GeneralSecurityException e){throw new CertificateException(e);}
+                }
+            };
+        }
+        SSLSocket socket=(SSLSocket)context(selectedTrust).getSocketFactory().createSocket();
+        try{InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),8000);socket.setSoTimeout(12000);enableModern(socket);socket.startHandshake();android.util.Log.i("QuanLianTLS","TLS connected to "+peer.getHostAddress()+":"+port+"; protocol="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite()+", local="+socket.getLocalAddress().getHostAddress());return socket;}
         catch(Exception e){try{socket.close();}catch(Exception ignored){}throw e;}
     }
     /** Used only for first-use enrollment; caller must present the fingerprint and obtain user approval. */
