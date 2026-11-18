@@ -17,6 +17,7 @@ public final class LanScanner {
 
     public static void scan(Context context, int port,
             Consumer<LanDiscovery.Announcement> found, Consumer<String> status) {
+        port = ReceiveForegroundService.DEFAULT_PORT;
         ExecutorService pool = Executors.newFixedThreadPool(32);
         try {
             Set<Integer> targets = collectTargets(context, status);
