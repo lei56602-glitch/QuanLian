@@ -44,11 +44,32 @@ public final class TlsIdentity {
         if(cert==null)throw new GeneralSecurityException("TLS device certificate unavailable");
         return hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
     }
-    private static SSLContext context(X509TrustManager trust) throws Exception {
-        KeyStore ks=keyStore();KeyManagerFactory kmf=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());kmf.init(ks,null);
+    /**
+     * TLS is server-authenticated with the receiver's pinned device certificate.
+     * Only the listening server needs the AndroidKeyStore private key. A sending
+     * client must not load/offer its own device certificate because this protocol
+     * does not use mutual TLS.
+     */
+    private static SSLContext context(X509TrustManager trust, boolean useLocalIdentity) throws Exception {
+        KeyManager[] keyManagers = null;
+        if (useLocalIdentity) {
+            KeyStore ks=keyStore();
+            java.security.cert.Certificate cert=ks.getCertificate(ALIAS);
+            java.security.Key privateKey=ks.getKey(ALIAS,null);
+            if (cert==null || privateKey==null) throw new GeneralSecurityException("本机 TLS 服务器证书或私钥不可用");
+            KeyManagerFactory kmf=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(ks,null);
+            keyManagers=kmf.getKeyManagers();
+            android.util.Log.i("QuanLianTLS","Server identity loaded; keyManagerAlgorithm="+kmf.getAlgorithm()
+                +", certificateSubject="+((X509Certificate)cert).getSubjectX500Principal()
+                +", publicKeyAlgorithm="+cert.getPublicKey().getAlgorithm()
+                +", privateKeyAlgorithm="+privateKey.getAlgorithm());
+        }
         TrustManager[] managers=trust==null?null:new TrustManager[]{trust};
-        SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(kmf.getKeyManagers(),managers,new SecureRandom());
-        android.util.Log.d("QuanLianTLS","SSLContext algorithm="+ctx.getProtocol()+", provider="+ctx.getProvider().getName()+", enabled candidates=TLSv1.3,TLSv1.2");
+        SSLContext ctx=SSLContext.getInstance("TLS");
+        ctx.init(keyManagers,managers,new SecureRandom());
+        android.util.Log.d("QuanLianTLS","SSLContext algorithm="+ctx.getProtocol()+", provider="+ctx.getProvider().getName()
+            +", role="+(useLocalIdentity?"SERVER":"CLIENT")+", enabled candidates=TLSv1.3,TLSv1.2");
         return ctx;
     }
     public static ServerSocket serverSocket(Context context,int port) throws Exception {
@@ -57,7 +78,7 @@ public final class TlsIdentity {
             android.util.Log.w("QuanLianPlain","DIAGNOSTIC PLAIN MODE: listening on 0.0.0.0:"+plain.getLocalPort()+" WITHOUT TLS");
             return plain;
         }
-        SSLServerSocket server=(SSLServerSocket)context(null).getServerSocketFactory().createServerSocket();
+        SSLServerSocket server=(SSLServerSocket)context(null,true).getServerSocketFactory().createServerSocket();
         server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",port));
         enableModern(server);return server;
     }
@@ -196,7 +217,7 @@ public final class TlsIdentity {
         if(expectedFingerprint==null||!expectedFingerprint.matches("(?i)[0-9a-f]{64}"))
             throw new SSLPeerUnverifiedException("缺少有效的设备自签名证书指纹");
         X509TrustManager selectedTrust = new PinnedTrustManager(expectedFingerprint);
-        SSLContext sslContext=context(selectedTrust);
+        SSLContext sslContext=context(selectedTrust,false);
         SSLSocket socket=(SSLSocket)sslContext.getSocketFactory().createSocket();
         try{
             disableHostnameVerification(socket);
