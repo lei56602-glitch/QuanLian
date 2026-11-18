@@ -33,6 +33,8 @@ public class ReceiveForegroundService extends Service {
     private NsdManager nsd;
     private NsdManager.RegistrationListener registration;
     private WifiManager.MulticastLock multicastLock;
+    private volatile boolean udpAnnouncing;
+    private Thread udpAnnounceThread;
     private BroadcastReceiver decisions;
     private final ConcurrentMap<String,PendingRequest> pendingRequests=new ConcurrentHashMap<>();
     private static class PendingRequest {
@@ -72,11 +74,23 @@ public class ReceiveForegroundService extends Service {
     private void listen(){
         try{
             server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",0));
-            int port=server.getLocalPort();publish(port);
+            int port=server.getLocalPort();publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
             while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
         }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
     }
+    private void startUdpAnnouncing(int port){
+        udpAnnouncing=true;
+        udpAnnounceThread=new Thread(()->{
+            while(running&&udpAnnouncing){
+                LanDiscovery.announce(deviceName(),port);
+                try{Thread.sleep(2000);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+            }
+        },"QuanLian-UDP-Announcer");
+        udpAnnounceThread.setDaemon(true);
+        udpAnnounceThread.start();
+    }
+
     private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
     private void publish(int port){
         try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);
@@ -135,7 +149,7 @@ public class ReceiveForegroundService extends Service {
     private void broadcastStatus(String text,int port,int progress){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);if(progress>=0)i.putExtra(EXTRA_PROGRESS,progress);sendBroadcast(i);}
     @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
     @Override public void onDestroy(){
-        running=false;try{if(server!=null)server.close();}catch(Exception ignored){}
+        running=false;udpAnnouncing=false;if(udpAnnounceThread!=null)udpAnnounceThread.interrupt();try{if(server!=null)server.close();}catch(Exception ignored){}
         for(Socket socket:activeSockets){try{socket.close();}catch(Exception ignored){}}activeSockets.clear();releaseReceiveWakeLock();
         try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}
         try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}
