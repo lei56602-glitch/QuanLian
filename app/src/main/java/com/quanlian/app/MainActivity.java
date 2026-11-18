@@ -163,7 +163,7 @@ public class MainActivity extends Activity {
   for(String[] p:m)if(p[0].equals(s))return p[1];
   if(s.startsWith("发送成功："))return "Sent successfully: "+s.substring(5);
   if(s.startsWith("文件校验失败："))return "File integrity check failed: "+s.substring(7);
-  if(s.startsWith("接收服务已启动 · 端口 "))return "Receive service started · port "+s.substring("接收服务已启动 · 端口 ".length);
+  if(s.startsWith("接收服务已启动 · 端口 "))return "Receive service started · port "+s.substring("接收服务已启动 · 端口 ".length());
   if(s.startsWith("正在重新搜索局域网设备"))return "Searching the local network again…";
   if(s.startsWith("已发送到 "))return "Sent to "+s.substring(5);
   if(s.startsWith("开始依次发送到 "))return "Starting sequential send to "+s.substring(8);
