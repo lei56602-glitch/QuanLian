@@ -30,9 +30,10 @@ public final class LanScanner {
                     try{
                         InetAddress address=InetAddress.getByAddress(new byte[]{(byte)candidate,(byte)(candidate>>>8),(byte)(candidate>>>16),(byte)(candidate>>>24)});
                         if(address.isLoopbackAddress()||address.isAnyLocalAddress())return;
-                        if(LanDiscovery.verify(address,scanPort)){
+                        String fp=TlsIdentity.inspectFingerprint(address.getHostAddress(),scanPort);
+                        if(LanDiscovery.verify(address,scanPort,fp)){
                             String id="manual:"+address.getHostAddress()+":"+scanPort;
-                            found.accept(new LanDiscovery.Announcement(id,"小李全联设备 "+address.getHostAddress(),address,scanPort));
+                            found.accept(new LanDiscovery.Announcement(id,"小李全联设备 "+address.getHostAddress(),fp,address,scanPort));
                         }
                     }catch(Exception ignored){}finally{done.countDown();}
                 });
