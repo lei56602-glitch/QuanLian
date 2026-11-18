@@ -156,7 +156,7 @@ public class MainActivity extends Activity {
  }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
  private void restorePage(){switch(page){case 6:settingsPage();break;case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:home();}}
- @Override public void onConfigurationChanged(android.content.res.Configuration newConfig){super.onConfigurationChanged(newConfig);restorePage();}
+ @Override public void onConfigurationChanged(android.content.res.Configuration newConfig){super.onConfigurationChanged(newConfig);applyWindowTheme();restorePage();}
  private void requestNotificationPermissionIfNeeded(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);}}
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_NOTIFICATIONS&&grantResults.length>0&&grantResults[0]!=android.content.pm.PackageManager.PERMISSION_GRANTED){Toast.makeText(this,"通知权限未开启，传输仍可尝试进行，但系统可能不会正常显示传输通知。",Toast.LENGTH_LONG).show();}}
  private void startLan(){
@@ -446,12 +446,11 @@ public class MainActivity extends Activity {
   page=0;deviceList=null;deviceStatus=null;
   int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
   boolean wide=widthDp>=700;
-  getWindow().setStatusBarColor(0xfff5f8ff);getWindow().setNavigationBarColor(0xfff5f8ff);
-  getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-  LinearLayout root=new LinearLayout(this);root.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.setBackgroundColor(0xfff5f8ff);
+  applyWindowTheme();
+  LinearLayout root=new LinearLayout(this);root.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.setBackgroundColor(pageBackground());
   root.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();int left=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).left:insets.getSystemWindowInsetLeft();int right=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).right:insets.getSystemWindowInsetRight();int bottom=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom:insets.getSystemWindowInsetBottom();v.setPadding(left,top,right,bottom);return insets;});
   if(wide){
-   LinearLayout rail=new LinearLayout(this);rail.setOrientation(LinearLayout.VERTICAL);rail.setPadding(dp(20),dp(25),dp(20),dp(20));rail.setBackgroundColor(Color.WHITE);
+   LinearLayout rail=new LinearLayout(this);rail.setOrientation(LinearLayout.VERTICAL);rail.setPadding(dp(20),dp(25),dp(20),dp(20));rail.setBackgroundColor(surfaceColor());
    rail.addView(homeText("小李全联",23,0xff1769e8,true));gap(rail,5);rail.addView(homeText("快速 · 安全 · 简单",12,0xff8794aa,false));gap(rail,30);
    homeNavItem(rail,"首页",true,()->home());homeNavItem(rail,"传输记录",false,()->historyPage());homeNavItem(rail,"故障诊断",false,()->diagnosticsPage());homeNavItem(rail,"关于我们",false,()->new AlertDialog.Builder(this).setTitle("小李全联").setMessage("快速、安全的局域网文件传输。").setPositiveButton("知道了",null).show());
    root.addView(rail,new LinearLayout.LayoutParams(dp(220),-1));
@@ -459,7 +458,7 @@ public class MainActivity extends Activity {
   LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(wide?30:18),dp(wide?24:10),dp(wide?30:18),dp(8));
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
   LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(homeText("小李全联",wide?29:26,0xff182747,true));gap(titles,5);titles.addView(homeText("让文件传输更简单",13,0xff8491a8,false));top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));
-  TextView setting=homeText("设置",13,0xff41618e,true);setting.setGravity(Gravity.CENTER);setting.setPadding(dp(15),dp(9),dp(15),dp(9));setting.setBackground(shape(0xffffffff,18));setting.setElevation(dp(1));setting.setOnClickListener(v->settingsPage());top.addView(setting);body.addView(top);
+  TextView setting=homeText("设置",13,0xff41618e,true);setting.setGravity(Gravity.CENTER);setting.setPadding(dp(15),dp(9),dp(15),dp(9));setting.setBackground(shape(surfaceColor(),18));setting.setElevation(dp(1));setting.setOnClickListener(v->settingsPage());top.addView(setting);body.addView(top);
   ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setClipToPadding(false);scroll.setClipChildren(false);scroll.setVerticalScrollBarEnabled(false);
   LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(3),dp(27),dp(3),dp(24));content.setClipChildren(false);content.setClipToPadding(false);
   LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -503,7 +502,7 @@ public class MainActivity extends Activity {
   Button advanced=btn("高级设置",0xff31577f);advanced.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("高级设置").setItems(new String[]{"故障诊断与日志","手动连接设备","发送方式设置"},(d,w)->{if(w==0)diagnosticsPage();else if(w==1)manualConnect();else showSendOptions();}).show());other.addView(advanced);l.addView(other);gap(l,14);
   Button save=btn("保存通用与接收设置",0xff2878f5);save.setOnClickListener(v->{String[] themes={"system","light","dark"},colors={"system","blue","green","purple","orange"},langs={"system","zh","en"};prefs.edit().putString("theme",themes[theme.getSelectedItemPosition()]).putString("accent",colors[color.getSelectedItemPosition()]).putString("language",langs[language.getSelectedItemPosition()]).putBoolean("english",language.getSelectedItemPosition()==2).putInt("font_scale",fontSize.getSelectedItemPosition()).putBoolean("animations_enabled",animations.isChecked()).putBoolean("auto_save",autoSave.isChecked()).putBoolean("save_to_album",album.isChecked()).putBoolean("auto_complete",autoComplete.isChecked()).putBoolean("save_history",history.isChecked()).apply();applyWindowTheme();Toast.makeText(this,"设置已保存",Toast.LENGTH_SHORT).show();settingsPage();});l.addView(save);installFlow(l,2);
  }private void diagnosticsPage(){
-  page=5;LinearLayout l=col();l.setBackgroundColor(0xfff5f8ff);lightHeader(l,"故障诊断与日志导出","连接失败后，发送端和接收端分别导出");
+  page=5;LinearLayout l=col();l.setBackgroundColor(pageBackground());lightHeader(l,"故障诊断与日志导出","连接失败后，发送端和接收端分别导出");
   l.addView(homeText("操作步骤",18,0xff1b2947,true));gap(l,8);l.addView(homeText("1. 两台手机都安装带有此功能的版本。\n2. 先分别打开本页面，确认旧日志已清空。\n3. 返回首页，重现一次发送失败。\n4. 两台手机分别回到本页面，点击“复制完整日志”或“分享日志”。\n5. 把两份日志都发给开发者。\n\n日志包含 TCP、TLS、证书校验、接收请求及异常堆栈，不记录文件内容。",14,0xff52627a,false));
   gap(l,16);Button copy=btn("复制完整日志",0xff1f77dc);copy.setOnClickListener(v->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("小李全联诊断日志",DiagnosticLog.read(this)));Toast.makeText(this,"日志已复制，可以直接粘贴发送",Toast.LENGTH_LONG).show();});l.addView(copy);
   gap(l,8);Button share=btn("分享 / 导出日志",0xff1f9e8f);share.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");i.putExtra(Intent.EXTRA_SUBJECT,"小李全联故障诊断日志");i.putExtra(Intent.EXTRA_TEXT,DiagnosticLog.read(this));startActivity(Intent.createChooser(i,"导出诊断日志"));});l.addView(share);
