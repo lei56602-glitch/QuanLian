@@ -56,20 +56,56 @@ public final class TlsIdentity {
      * client must not load/offer its own device certificate because this protocol
      * does not use mutual TLS.
      */
+    /**
+     * AndroidKeyStore may still contain the legacy RSA identity. The default
+     * KeyManagerFactory can expose both aliases and choose one according to
+     * provider ordering. Pin the server certificate alias explicitly so the
+     * EC migration cannot silently fall back to the old RSA private key.
+     */
+    private static final class PinnedServerKeyManager extends X509ExtendedKeyManager {
+        private final X509ExtendedKeyManager delegate;
+        PinnedServerKeyManager(X509ExtendedKeyManager value) { delegate=value; }
+        private boolean supports(String keyType) {
+            return keyType!=null && (keyType.equalsIgnoreCase("EC") || keyType.equalsIgnoreCase("ECDSA"));
+        }
+        @Override public String chooseServerAlias(String keyType, java.security.Principal[] issuers, Socket socket) {
+            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? ALIAS : null;
+        }
+        @Override public String chooseEngineServerAlias(String keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
+            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? ALIAS : null;
+        }
+        @Override public String[] getServerAliases(String keyType, java.security.Principal[] issuers) {
+            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? new String[]{ALIAS} : null;
+        }
+        @Override public String chooseClientAlias(String[] keyType, java.security.Principal[] issuers, Socket socket) { return null; }
+        @Override public String[] getClientAliases(String keyType, java.security.Principal[] issuers) { return null; }
+        @Override public X509Certificate[] getCertificateChain(String alias) { return ALIAS.equals(alias)?delegate.getCertificateChain(ALIAS):null; }
+        @Override public PrivateKey getPrivateKey(String alias) { return ALIAS.equals(alias)?delegate.getPrivateKey(ALIAS):null; }
+    }
+
     private static SSLContext context(X509TrustManager trust, boolean useLocalIdentity) throws Exception {
         KeyManager[] keyManagers = null;
         if (useLocalIdentity) {
             KeyStore ks=keyStore();
-            java.security.cert.Certificate cert=ks.getCertificate(ALIAS);
-            java.security.Key privateKey=ks.getKey(ALIAS,null);
+            X509Certificate cert=(X509Certificate)ks.getCertificate(ALIAS);
+            PrivateKey privateKey=(PrivateKey)ks.getKey(ALIAS,null);
             if (cert==null || privateKey==null) throw new GeneralSecurityException("本机 TLS 服务器证书或私钥不可用");
             KeyManagerFactory kmf=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             kmf.init(ks,null);
-            keyManagers=kmf.getKeyManagers();
-            android.util.Log.i("QuanLianTLS","Server identity loaded; keyManagerAlgorithm="+kmf.getAlgorithm()
-                +", certificateSubject="+((X509Certificate)cert).getSubjectX500Principal()
+            X509ExtendedKeyManager selected=null;
+            for(KeyManager manager:kmf.getKeyManagers()) {
+                if(manager instanceof X509ExtendedKeyManager) { selected=(X509ExtendedKeyManager)manager; break; }
+            }
+            if(selected==null || selected.getPrivateKey(ALIAS)==null || selected.getCertificateChain(ALIAS)==null)
+                throw new GeneralSecurityException("KeyManagerFactory 未能读取指定 EC TLS 身份别名 "+ALIAS);
+            keyManagers=new KeyManager[]{new PinnedServerKeyManager(selected)};
+            android.util.Log.i("QuanLianTLS","Server identity pinned; alias="+ALIAS
+                +", keyManagerAlgorithm="+kmf.getAlgorithm()
+                +", certificateSubject="+cert.getSubjectX500Principal()
                 +", publicKeyAlgorithm="+cert.getPublicKey().getAlgorithm()
-                +", privateKeyAlgorithm="+privateKey.getAlgorithm());
+                +", certificateSignatureAlgorithm="+cert.getSigAlgName()
+                +", privateKeyAlgorithm="+privateKey.getAlgorithm()
+                +", certificateSha256="+hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded())));
         }
         TrustManager[] managers=trust==null?null:new TrustManager[]{trust};
         SSLContext ctx=SSLContext.getInstance("TLS");
