@@ -152,12 +152,11 @@ public class TransferForegroundService extends Service {
     }
 
     private static class SendFile {
-        final File file; final String name; final long size; final String hash;
-        SendFile(File file, String name, long size, String hash) { this.file=file; this.name=name; this.size=size; this.hash=hash; }
+        final Uri uri; final String name; final long size; final String hash;
+        SendFile(Uri uri, String name, long size, String hash) { this.uri=uri; this.name=name; this.size=size; this.hash=hash; }
     }
 
     private void executeSend(ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, String fingerprint, int startId) {
-        ArrayList<File> tempFiles = new ArrayList<>();
         boolean cancelled = false;
         String failure = null;
         try {
@@ -168,23 +167,19 @@ public class TransferForegroundService extends Service {
             long totalBytes = 0;
             for (int i=0; i<uris.size(); i++) {
                 if (cancelRequested.get()) throw new IOException("已取消发送");
-                File cached = File.createTempFile("quanlian_send_", ".bin", getCacheDir());
-                tempFiles.add(cached);
                 MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 long length = 0;
-                try (InputStream input = getContentResolver().openInputStream(uris.get(i));
-                     FileOutputStream output = new FileOutputStream(cached)) {
+                try (InputStream input = getContentResolver().openInputStream(uris.get(i))) {
                     if (input == null) throw new IOException("无法读取文件：" + names.get(i));
                     int n;
                     while ((n=input.read(buffer))!=-1) {
                         if (cancelRequested.get()) throw new IOException("已取消发送");
-                        output.write(buffer,0,n); digest.update(buffer,0,n); length += n;
+                        digest.update(buffer,0,n); length += n;
                     }
-                    output.getFD().sync();
                 }
                 if (totalBytes > Long.MAX_VALUE-length) throw new IOException("文件总大小超出限制");
                 totalBytes += length;
-                files.add(new SendFile(cached,names.get(i),length,hex(digest.digest())));
+                files.add(new SendFile(uris.get(i),names.get(i),length,hex(digest.digest())));
             }
             if (cancelRequested.get()) throw new IOException("已取消发送");
             updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
@@ -206,7 +201,7 @@ public class TransferForegroundService extends Service {
                     long offset=in.readLong();
                     if(offset<0||offset>file.size)throw new IOException("接收端续传位置无效");
                     sent+=offset;
-                    try (InputStream input = new BufferedInputStream(new FileInputStream(file.file))) {
+                    try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(file.uri))) {\n                        if(input==null)throw new IOException("无法重新读取文件："+file.name);
                         long skipped=0;while(skipped<offset){long n=input.skip(offset-skipped);if(n<=0){if(input.read()==-1)throw new EOFException("无法定位续传位置");n=1;}skipped+=n;}
                         byte[] chunk=new byte[1024*1024];
                         long remainingFile=file.size-offset;
@@ -234,7 +229,6 @@ public class TransferForegroundService extends Service {
             failure = e.getMessage()==null ? "传输中断" : e.getMessage();
         } finally {
             activeSocket.set(null);
-            for (File file : tempFiles) try { if (file.exists()) file.delete(); } catch (Exception ignored) { }
             transferRunning.set(false);
             releaseWakeLock();
             publishResult(failure==null, cancelled, failure);
