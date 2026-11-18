@@ -110,9 +110,37 @@ public class MainActivity extends Activity {
    {"个接收设备"," recipients"},
    {"输入附近设备显示的名称","Name shown to nearby devices"},
    {"感谢支持","Thanks for your support"},
-   {"无法打开文件：","Unable to open file: "}
+   {"无法打开文件：","Unable to open file: "},
+   {"‹  返回首页","‹  Back to Home"},
+   {"小李全联","Xiao Li Quan Lian"},
+   {"选择要分享的内容","Choose what to share"},
+   {"+ 添加文件","+ Add files"},
+   {"设备保持在线，收到请求后由你决定是否接受","Stay available and choose whether to accept incoming files"},
+   {"正在等待附近设备发送","Waiting for nearby devices"},
+   {"暂时没有传输记录","No transfer history yet"},
+   {"UDP 在线","Online via UDP"},
+   {"正在重新搜索局域网设备…","Searching the local network again…"},
+   {"接收服务已启动","Receive service started"},
+   {"正在启动接收服务…","Starting receive service…"},
+   {"故障诊断与日志","Diagnostics and logs"},
+   {"手动连接设备","Connect manually"},
+   {"发送方式设置","Send method settings"},
+   {"通知权限未开启，传输仍可尝试进行，但系统可能不会正常显示传输通知。","Notifications are disabled. Transfers may still work, but system transfer notifications may not appear."},
+   {"文件仅在设备间通过局域网传输，不会上传到开发者服务器。设备发现使用局域网广播，传输连接使用应用内 TLS 身份验证。传输历史仅保存在本机，可在应用内清除。","Files are transferred directly between devices over the local network and are not uploaded to the developer's server. Device discovery uses LAN broadcasts and transfer connections use the app's TLS identity verification. Transfer history is stored locally and can be cleared in the app."},
+   {"小李全联是一款局域网文件传输工具。\n版本：1.0.1\n无广告，不上传文件内容。","Xiao Li Quan Lian is a local-network file transfer app.\nVersion: 1.0.1\nNo ads. File contents are not uploaded."},
+   {"感谢支持。当前版本尚未配置可验证的收款渠道，因此不会展示虚构的二维码或支付链接。","Thank you for your support. No verified payment channel is configured in this version, so no fake QR code or payment link is shown."},
+   {"连接失败后，发送端和接收端分别导出","Export logs from both sender and receiver after a connection failure"},
+   {"保存目录：","Save folder: "}
   };
   for(String[] p:m)if(p[0].equals(s))return p[1];
+  if(s.startsWith("接收服务已启动 · 端口 "))return "Receive service started · port "+s.substring("接收服务已启动 · 端口 ".length);
+  if(s.startsWith("正在重新搜索局域网设备"))return "Searching the local network again…";
+  if(s.startsWith("已发送到 "))return "Sent to "+s.substring(5);
+  if(s.startsWith("开始依次发送到 "))return "Starting sequential send to "+s.substring(8);
+  if(s.startsWith("已添加文件夹中的 "))return "Added "+s.substring(8);
+  if(s.startsWith("接收失败："))return "Receive failed: "+s.substring(5);
+  if(s.startsWith("连接失败："))return "Connection failed: "+s.substring(5);
+  if(s.startsWith("无法打开文件："))return "Unable to open file: "+s.substring(7);
   if(s.startsWith("已添加 "))return "Added "+s.substring(4);
   if(s.startsWith("发现 "))return "Found "+s.substring(3);
   if(s.startsWith("发送方："))return "Sender: "+s.substring(4);
@@ -477,7 +505,7 @@ public class MainActivity extends Activity {
   if(!wide)root.addView(flowNav(-1),new LinearLayout.LayoutParams(-1,-2));
   setContentView(root);
  }
- private Spinner settingSpinner(LinearLayout card,String label,String[] values,int selected){card.addView(homeText(label,15,0xff1b2947,true));gap(card,6);Spinner spinner=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values);spinner.setAdapter(adapter);spinner.setSelection(Math.max(0,Math.min(selected,values.length-1)));card.addView(spinner);gap(card,12);return spinner;}
+ private Spinner settingSpinner(LinearLayout card,String label,String[] values,int selected){card.addView(homeText(label,15,0xff1b2947,true));gap(card,6);Spinner spinner=new Spinner(this);String[] translated=values.clone();for(int i=0;i<translated.length;i++)translated[i]=ui(translated[i]);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,translated);spinner.setAdapter(adapter);spinner.setSelection(Math.max(0,Math.min(selected,values.length-1)));card.addView(spinner);gap(card,12);return spinner;}
  private Switch settingSwitch(LinearLayout card,String label,boolean checked){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.addView(homeText(label,14,0xff263957,true),new LinearLayout.LayoutParams(0,-2,1));Switch toggle=new Switch(this);toggle.setChecked(checked);row.addView(toggle);card.addView(row);gap(card,8);return toggle;}
  private void infoPage(String title,String body){new AlertDialog.Builder(this).setTitle(title).setMessage(body).setPositiveButton("知道了",null).show();}
  private void settingsPage(){
@@ -499,7 +527,7 @@ public class MainActivity extends Activity {
   Button about=btn("关于页面",0xff31577f);about.setOnClickListener(v->infoPage("关于小李全联","小李全联是一款局域网文件传输工具。\n版本：1.0.1\n无广告，不上传文件内容。"));other.addView(about);gap(other,7);
   Button donate=btn("捐赠入口",0xff31577f);donate.setOnClickListener(v->infoPage("支持小李全联","感谢支持。当前版本尚未配置可验证的收款渠道，因此不会展示虚构的二维码或支付链接。"));other.addView(donate);gap(other,7);
   Button privacy=btn("隐私政策",0xff31577f);privacy.setOnClickListener(v->infoPage("隐私政策","文件仅在设备间通过局域网传输，不会上传到开发者服务器。设备发现使用局域网广播，传输连接使用应用内 TLS 身份验证。传输历史仅保存在本机，可在应用内清除。"));other.addView(privacy);gap(other,7);
-  Button advanced=btn("高级设置",0xff31577f);advanced.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("高级设置").setItems(new String[]{"故障诊断与日志","手动连接设备","发送方式设置"},(d,w)->{if(w==0)diagnosticsPage();else if(w==1)manualConnect();else showSendOptions();}).show());other.addView(advanced);l.addView(other);gap(l,14);
+  Button advanced=btn("高级设置",0xff31577f);advanced.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("高级设置").setItems(new String[]{ui("故障诊断与日志"),ui("手动连接设备"),ui("发送方式设置")},(d,w)->{if(w==0)diagnosticsPage();else if(w==1)manualConnect();else showSendOptions();}).show());other.addView(advanced);l.addView(other);gap(l,14);
   Button save=btn("保存通用与接收设置",0xff2878f5);save.setOnClickListener(v->{String[] themes={"system","light","dark"},colors={"system","blue","green","purple","orange"},langs={"system","zh","en"};prefs.edit().putString("theme",themes[theme.getSelectedItemPosition()]).putString("accent",colors[color.getSelectedItemPosition()]).putString("language",langs[language.getSelectedItemPosition()]).putBoolean("english",language.getSelectedItemPosition()==2).putInt("font_scale",fontSize.getSelectedItemPosition()).putBoolean("animations_enabled",animations.isChecked()).putBoolean("auto_save",autoSave.isChecked()).putBoolean("save_to_album",album.isChecked()).putBoolean("auto_complete",autoComplete.isChecked()).putBoolean("save_history",history.isChecked()).apply();applyWindowTheme();Toast.makeText(this,"设置已保存",Toast.LENGTH_SHORT).show();settingsPage();});l.addView(save);installFlow(l,2);
  }private void diagnosticsPage(){
   page=5;LinearLayout l=col();l.setBackgroundColor(pageBackground());lightHeader(l,"故障诊断与日志导出","连接失败后，发送端和接收端分别导出");
@@ -636,7 +664,7 @@ public class MainActivity extends Activity {
    }catch(Exception e){android.util.Log.w("QuanLianFiles","Unable to enumerate selected folder",e);}
   }
   private void showSendOptions(){
-   String[] options={"单个接收者","多个接收者","通过连接分享"};
+   String[] options={ui("单个接收者"),ui("多个接收者"),ui("通过连接分享")};
    new AlertDialog.Builder(this).setTitle("发送方式").setItems(options,(dialog,which)->{
     if(which==0){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","single").apply();Toast.makeText(this,"已选择单个接收者，点击一个附近设备即可发送",Toast.LENGTH_SHORT).show();}
     else if(which==1){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","multiple").apply();showMultipleReceiverSelection();}
