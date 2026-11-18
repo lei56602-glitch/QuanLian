@@ -153,9 +153,10 @@ public class ReceiveForegroundService extends Service {
                     try(InputStream prior=new FileInputStream(tmp)){byte[] old=new byte[BUF];int n;while((n=prior.read(old))!=-1)digest.update(old,0,n);}catch(FileNotFoundException ignored){}
                     out.writeLong(offset);out.flush();left-=offset;
                     try(FileOutputStream fos=new FileOutputStream(tmp,true)){
-                        byte[] chunk=new byte[1024*1024];
+                        byte[] chunk=new byte[4*1024*1024];
                         if(batched){
-                            final long ackWindow=8L*1024*1024;
+                            // Match the sender's 16 MiB window; retain one durable sync per window.
+                            final long ackWindow=16L*1024*1024;
                             while(left>0){
                                 long batchBytes=0;
                                 while(left>0&&batchBytes<ackWindow){
