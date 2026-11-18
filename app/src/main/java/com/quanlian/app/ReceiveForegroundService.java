@@ -90,7 +90,11 @@ public class ReceiveForegroundService extends Service {
                     +", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
                     +", acceptWaitMs="+(android.os.SystemClock.elapsedRealtime()-acceptStarted)
                     +", mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"));
-                s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);
+                s.setSoTimeout(180000);s.setTcpNoDelay(true);
+                // Apply large TCP windows to accepted TLS/plain sockets; record the effective OS values.
+                s.setSendBufferSize(4*1024*1024);s.setReceiveBufferSize(4*1024*1024);
+                android.util.Log.i("QuanLianSocket","ACCEPTED_TCP_BUFFERS peer="+s.getInetAddress().getHostAddress()+", send="+s.getSendBufferSize()+", receive="+s.getReceiveBufferSize());
+                activeSockets.add(s);
                 clients.execute(()->{try{receive(s);}catch(Exception e){
                     DiagnosticLog.error(this,"RECEIVE_SESSION_FAILED",e);
                     android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
@@ -191,14 +195,14 @@ public class ReceiveForegroundService extends Service {
         if(Build.VERSION.SDK_INT>=29){
             ContentValues v=new ContentValues();v.put(MediaStore.MediaColumns.DISPLAY_NAME,name);v.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");v.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");v.put(MediaStore.MediaColumns.IS_PENDING,1);
             Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(u==null)return null;
-            try{try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+            try{try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[1024*1024];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
             v.clear();v.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,v,null,null);return u;
             }catch(Exception e){try{getContentResolver().delete(u,null,null);}catch(Exception ignored){}throw e;}
         }
         File dir=new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),"小李全联");
         if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建下载目录");
         File target=new File(dir,System.currentTimeMillis()+"_"+name);
-        try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){byte[] b=new byte[BUF];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+        try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){byte[] b=new byte[1024*1024];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
         return Uri.fromFile(target);
     }
     private void addHistory(String name,long size,String peer,String uri){
