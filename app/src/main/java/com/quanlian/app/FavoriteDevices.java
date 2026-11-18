@@ -21,7 +21,7 @@ public final class FavoriteDevices {
         if(host==null||host.trim().isEmpty()||port<1||port>65535)return;
         try{JSONArray old=new JSONArray(c.getSharedPreferences("favorite_devices",0).getString("items","[]")),next=new JSONArray();boolean replaced=false;
             for(int i=0;i<old.length();i++){JSONObject o=old.getJSONObject(i);if(host.equals(o.optString("host"))&&port==o.optInt("port")){if(!replaced){next.put(item(name,host,port,fingerprint));replaced=true;}}else next.put(o);}
-            if(!replaced)next.put(item(name,host,port));
+            if(!replaced)next.put(item(name,host,port,fingerprint));
             c.getSharedPreferences("favorite_devices",0).edit().putString("items",next.toString()).apply();
         }catch(Exception ignored){}
     }
