@@ -24,6 +24,7 @@ public class ReceiveForegroundService extends Service {
     public static final String EXTRA_ID="request_id", EXTRA_ACCEPT="accept", EXTRA_SENDER="sender", EXTRA_COUNT="count", EXTRA_TOTAL="total", EXTRA_PORT="port", EXTRA_TEXT="text", EXTRA_PROGRESS="progress";
     private static final String TYPE="_quanlian._tcp.", CHANNEL="quanlian_receive";
     private static final int NOTIFICATION_ID=2102, BUF=65536;
+    public static final int DEFAULT_PORT=38890;
     private final ExecutorService clients=Executors.newCachedThreadPool();
     private final Set<Socket> activeSockets=ConcurrentHashMap.newKeySet();
     private PowerManager.WakeLock receiveWakeLock;
@@ -73,11 +74,11 @@ public class ReceiveForegroundService extends Service {
     }
     private void listen(){
         try{
-            try{server=TlsIdentity.serverSocket(38890);}catch(BindException occupied){server=TlsIdentity.serverSocket(0);}
-            int port=server.getLocalPort();publish(port);startUdpAnnouncing(port);
+            server=TlsIdentity.serverSocket(DEFAULT_PORT);
+            int port=server.getLocalPort();android.util.Log.i("QuanLianReceive","TLS receive server listening on 0.0.0.0:"+port);publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
-            while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
-        }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
+            while(running){Socket s=server.accept();android.util.Log.i("QuanLianReceive","Incoming TCP/TLS connection from "+s.getInetAddress().getHostAddress());s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
+        }catch(Exception e){if(running){android.util.Log.e("QuanLianReceive","Receive listener failed",e);broadcastStatus("接收服务异常："+e.getClass().getSimpleName()+"："+e.getMessage(),-1);}}
     }
     private void startUdpAnnouncing(int port){
         udpAnnouncing=true;
@@ -101,11 +102,12 @@ public class ReceiveForegroundService extends Service {
     private void receive(Socket socket){
         acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
-            String protocol=in.readUTF();if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
+            String protocol=in.readUTF();android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
+            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);
