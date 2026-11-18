@@ -469,7 +469,46 @@ public class MainActivity extends Activity {
  private void connectFavorite(FavoriteDevices.Entry entry){
   workers.execute(()->{try{InetAddress ip=InetAddress.getByName(entry.host);if(!LanDiscovery.verify(this,ip,entry.port,entry.fingerprint))throw new IOException("设备当前不可连接或证书指纹已变化");Device d=new Device(entry.name,"favorite:"+entry.host+":"+entry.port,ip,entry.port,entry.fingerprint);runOnUiThread(()->{synchronized(devices){devices.put(d.key,d);}if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已连接验证",Toast.LENGTH_SHORT).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"收藏设备连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
  }
- private void receivePage(){page=3;LinearLayout l=col();l.setBackgroundColor(0xfff5f8ff);l.addView(homeText("接收文件",25,0xff182747,true));gap(l,6);l.addView(homeText("设备保持在线，收到请求后由你决定是否接受",13,0xff8491a8,false));gap(l,20);LinearLayout c=homeCard();c.setGravity(Gravity.CENTER_HORIZONTAL);TextView icon=homeText("↓",52,0xff20a985,true);icon.setGravity(Gravity.CENTER);c.addView(icon);gap(c,8);c.addView(homeText("正在等待附近设备发送",19,0xff1b2947,true));gap(c,8);receiveStatus=homeText(port>0?"接收服务已启动 · 端口 "+port:"正在启动接收服务…",13,0xff8491a8,false);c.addView(receiveStatus);l.addView(c);installFlow(l,0);}
+ private class ReceiveAnimationView extends View {
+  private final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+  private final long started=android.os.SystemClock.uptimeMillis();
+  ReceiveAnimationView(Context context){super(context);setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
+  @Override protected void onDraw(android.graphics.Canvas canvas){
+   super.onDraw(canvas);
+   float cx=getWidth()/2f,cy=getHeight()/2f;
+   float max=Math.min(getWidth(),getHeight())*.43f;
+   boolean animated=getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("animations_enabled",true);
+   float t=animated?((android.os.SystemClock.uptimeMillis()-started)%2400L)/2400f:0f;
+   paint.setStyle(android.graphics.Paint.Style.STROKE);
+   paint.setStrokeWidth(dp(1.5f));
+   paint.setColor(0xffdceaff);
+   canvas.drawCircle(cx,cy,max*.82f,paint);
+   for(int i=0;i<3;i++){
+    float phase=animated?(t+i/3f)%1f:.72f;
+    float radius=dp(42)+phase*(max-dp(42));
+    paint.setColor(android.graphics.Color.argb(animated?(int)(135*(1-phase)):55,42,132,245));
+    paint.setStrokeWidth(dp(2));
+    canvas.drawCircle(cx,cy,radius,paint);
+   }
+   paint.setStyle(android.graphics.Paint.Style.FILL);
+   paint.setColor(0xffeaf3ff);
+   canvas.drawCircle(cx,cy,dp(43),paint);
+   paint.setColor(0xff2878f5);
+   android.graphics.RectF phone=new android.graphics.RectF(cx-dp(24),cy-dp(31),cx+dp(24),cy+dp(31));
+   canvas.drawRoundRect(phone,dp(8),dp(8),paint);
+   paint.setColor(Color.WHITE);
+   android.graphics.RectF screen=new android.graphics.RectF(cx-dp(19),cy-dp(25),cx+dp(19),cy+dp(23));
+   canvas.drawRoundRect(screen,dp(4),dp(4),paint);
+   paint.setColor(0xff2878f5);
+   android.graphics.Path arrow=new android.graphics.Path();
+   arrow.moveTo(cx,cy-dp(18));arrow.lineTo(cx,cy+dp(7));
+   arrow.moveTo(cx-dp(10),cy-dp(3));arrow.lineTo(cx,cy+dp(8));arrow.lineTo(cx+dp(10),cy-dp(3));
+   paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(3));paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+   canvas.drawPath(arrow,paint);
+   if(animated)postInvalidateDelayed(32);
+  }
+ }
+ private void receivePage(){page=3;LinearLayout l=col();l.setBackgroundColor(0xfff5f8ff);l.addView(homeText("接收文件",25,0xff182747,true));gap(l,6);l.addView(homeText("设备保持在线，收到请求后由你决定是否接受",13,0xff8491a8,false));gap(l,20);LinearLayout c=homeCard();c.setGravity(Gravity.CENTER_HORIZONTAL);ReceiveAnimationView animation=new ReceiveAnimationView(this);LinearLayout.LayoutParams animationParams=new LinearLayout.LayoutParams(dp(220),dp(220));animationParams.gravity=Gravity.CENTER_HORIZONTAL;c.addView(animation,animationParams);gap(c,8);c.addView(homeText("正在等待附近设备发送",19,0xff1b2947,true));gap(c,8);receiveStatus=homeText(port>0?"接收服务已启动 · 端口 "+port:"正在启动接收服务…",13,0xff8491a8,false);c.addView(receiveStatus);l.addView(c);installFlow(l,0);}
  @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;discoveryHandler.removeCallbacks(pruneDevices);unregisterReceiveReceiver();if(udpDiscovery!=null){udpDiscovery.close();udpDiscovery=null;}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
  @Override public void onBackPressed(){if(page==0)super.onBackPressed();else if(page==1||page==2)home();else if(page==4)home();else home();}
 }
