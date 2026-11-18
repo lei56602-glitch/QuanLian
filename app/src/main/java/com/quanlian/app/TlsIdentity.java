@@ -6,112 +6,39 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.RouteInfo;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 import java.io.*;
 import java.net.*;
 import java.security.*;
-import java.security.spec.ECGenParameterSpec;
 import java.security.cert.*;
 import java.util.*;
 import javax.net.ssl.*;
-import javax.security.auth.x500.X500Principal;
 
 /** Per-install TLS identity. Peers pin the SHA-256 fingerprint advertised during discovery. */
 public final class TlsIdentity {
-    // Versioned EC identity avoids the RSA/AndroidKeyStore TLS signing failure
-    // observed on some Android 17 devices. Existing RSA aliases are left untouched.
-    private static final String ALIAS="QuanLian-TLS-Identity-EC-v2";
     public static final String PREFS="quanlian_diagnostics";
     public static final String KEY_PLAIN="plain_mode";
     public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
     public static String plainFingerprint(){return "0000000000000000000000000000000000000000000000000000000000000000";}
     private TlsIdentity(){}
-    private static synchronized KeyStore keyStore() throws Exception {
-        KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
-        if(!ks.containsAlias(ALIAS)){
-            // Use P-256 ECDSA for the device certificate and TLS server signatures.
-            // The previous AndroidKeyStore RSA identity triggered Conscrypt's
-            // "RSA routines: OPENSSL_internal:internal error" during server handshake.
-            KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC,"AndroidKeyStore");
-            gen.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
-                .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256)
-                .setCertificateSubject(new X500Principal("CN=QuanLian Device"))
-                .setCertificateSerialNumber(new java.math.BigInteger(64,new SecureRandom()))
-                .setCertificateNotBefore(new Date(System.currentTimeMillis()-86400000L))
-                .setCertificateNotAfter(new Date(System.currentTimeMillis()+10L*365*86400000L)).build());
-            gen.generateKeyPair();
-        }
-        return ks;
-    }
     public static String fingerprint() throws Exception {
-        java.security.cert.Certificate cert=keyStore().getCertificate(ALIAS);
-        if(cert==null)throw new GeneralSecurityException("TLS device certificate unavailable");
+        X509Certificate cert=InMemoryTlsIdentity.get().certificate;
         return hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
     }
-    /**
-     * TLS is server-authenticated with the receiver's pinned device certificate.
-     * Only the listening server needs the AndroidKeyStore private key. A sending
-     * client must not load/offer its own device certificate because this protocol
-     * does not use mutual TLS.
-     */
-    /**
-     * AndroidKeyStore may still contain the legacy RSA identity. The default
-     * KeyManagerFactory can expose both aliases and choose one according to
-     * provider ordering. Pin the server certificate alias explicitly so the
-     * EC migration cannot silently fall back to the old RSA private key.
-     */
-    private static final class PinnedServerKeyManager extends X509ExtendedKeyManager {
-        private final X509ExtendedKeyManager delegate;
-        PinnedServerKeyManager(X509ExtendedKeyManager value) { delegate=value; }
-        private boolean supports(String keyType) {
-            return keyType!=null && (keyType.equalsIgnoreCase("EC") || keyType.equalsIgnoreCase("ECDSA"));
-        }
-        @Override public String chooseServerAlias(String keyType, java.security.Principal[] issuers, Socket socket) {
-            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? ALIAS : null;
-        }
-        @Override public String chooseEngineServerAlias(String keyType, java.security.Principal[] issuers, javax.net.ssl.SSLEngine engine) {
-            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? ALIAS : null;
-        }
-        @Override public String[] getServerAliases(String keyType, java.security.Principal[] issuers) {
-            return supports(keyType) && delegate.getPrivateKey(ALIAS)!=null && delegate.getCertificateChain(ALIAS)!=null ? new String[]{ALIAS} : null;
-        }
-        @Override public String chooseClientAlias(String[] keyType, java.security.Principal[] issuers, Socket socket) { return null; }
-        @Override public String[] getClientAliases(String keyType, java.security.Principal[] issuers) { return null; }
-        @Override public X509Certificate[] getCertificateChain(String alias) { return ALIAS.equals(alias)?delegate.getCertificateChain(ALIAS):null; }
-        @Override public PrivateKey getPrivateKey(String alias) { return ALIAS.equals(alias)?delegate.getPrivateKey(ALIAS):null; }
-    }
-
     private static SSLContext context(X509TrustManager trust, boolean useLocalIdentity) throws Exception {
-        KeyManager[] keyManagers = null;
-        if (useLocalIdentity) {
-            KeyStore ks=keyStore();
-            X509Certificate cert=(X509Certificate)ks.getCertificate(ALIAS);
-            PrivateKey privateKey=(PrivateKey)ks.getKey(ALIAS,null);
-            if (cert==null || privateKey==null) throw new GeneralSecurityException("本机 TLS 服务器证书或私钥不可用");
-            KeyManagerFactory kmf=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            kmf.init(ks,null);
-            X509ExtendedKeyManager selected=null;
-            for(KeyManager manager:kmf.getKeyManagers()) {
-                if(manager instanceof X509ExtendedKeyManager) { selected=(X509ExtendedKeyManager)manager; break; }
-            }
-            if(selected==null || selected.getPrivateKey(ALIAS)==null || selected.getCertificateChain(ALIAS)==null)
-                throw new GeneralSecurityException("KeyManagerFactory 未能读取指定 EC TLS 身份别名 "+ALIAS);
-            keyManagers=new KeyManager[]{new PinnedServerKeyManager(selected)};
-            android.util.Log.i("QuanLianTLS","Server identity pinned; alias="+ALIAS
-                +", keyManagerAlgorithm="+kmf.getAlgorithm()
-                +", certificateSubject="+cert.getSubjectX500Principal()
-                +", publicKeyAlgorithm="+cert.getPublicKey().getAlgorithm()
-                +", certificateSignatureAlgorithm="+cert.getSigAlgName()
-                +", privateKeyAlgorithm="+privateKey.getAlgorithm()
-                +", certificateSha256="+hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded())));
+        KeyManager[] keyManagers=null;
+        if(useLocalIdentity) {
+            InMemoryTlsIdentity identity=InMemoryTlsIdentity.get();
+            keyManagers=new KeyManager[]{identity.keyManager};
+            android.util.Log.i("QuanLianTLS","Server identity pinned in memory; keyAlgorithm="
+                +identity.keyPair.getPrivate().getAlgorithm()+", keyBits=2048"
+                +", certificateSha256="+hex(MessageDigest.getInstance("SHA-256").digest(identity.certificate.getEncoded())));
         }
         TrustManager[] managers=trust==null?null:new TrustManager[]{trust};
-        SSLContext ctx=SSLContext.getInstance("TLS");
+        SSLContext ctx=SSLContext.getInstance("TLSv1.2");
         ctx.init(keyManagers,managers,new SecureRandom());
-        android.util.Log.d("QuanLianTLS","SSLContext algorithm="+ctx.getProtocol()+", provider="+ctx.getProvider().getName()
-            +", role="+(useLocalIdentity?"SERVER":"CLIENT")+", enabled candidates=TLSv1.3,TLSv1.2");
+        android.util.Log.i("QuanLianTLS","SSLContext algorithm="+ctx.getProtocol()
+            +", provider="+ctx.getProvider().getName()+", role="+(useLocalIdentity?"SERVER":"CLIENT")
+            +", enabledProtocols=[TLSv1.2]");
         return ctx;
     }
     public static ServerSocket serverSocket(Context context,int port) throws Exception {
@@ -122,7 +49,8 @@ public final class TlsIdentity {
         }
         SSLServerSocket server=(SSLServerSocket)context(null,true).getServerSocketFactory().createServerSocket();
         server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",port));
-        enableModern(server);return server;
+        enableTls12(server);
+        return server;
     }
     /**
      * Bind an unconnected TCP socket to the Android Network whose route reaches
@@ -281,7 +209,7 @@ public final class TlsIdentity {
                 +", elapsedMs="+(android.os.SystemClock.elapsedRealtime()-connectStarted)
                 +", SSLContext="+sslContext.getProtocol());
             socket.setSoTimeout(12000);
-            enableModern(socket);
+            enableTls12(socket);
             android.util.Log.i("QuanLianTLS","TLS_HANDSHAKE_BEGIN target="+peer.getHostAddress()+":"+port
                 +", enabledProtocols="+Arrays.toString(socket.getEnabledProtocols()));
             stage="TLS_HANDSHAKE";
@@ -307,13 +235,13 @@ public final class TlsIdentity {
             public void checkClientTrusted(X509Certificate[] c,String a){}
             public void checkServerTrusted(X509Certificate[] c,String a)throws CertificateException{if(c==null||c.length==0)throw new CertificateException("Missing peer certificate");}
         };
-        SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
+        SSLContext ctx=SSLContext.getInstance("TLSv1.2");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
         try(SSLSocket socket=(SSLSocket)ctx.getSocketFactory().createSocket()){
-            InetAddress peer=InetAddress.getByName(host);disableHostnameVerification(socket);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),2500);socket.setSoTimeout(4000);enableModern(socket);socket.startHandshake();
+            InetAddress peer=InetAddress.getByName(host);disableHostnameVerification(socket);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),2500);socket.setSoTimeout(4000);enableTls12(socket);socket.startHandshake();
             java.security.cert.Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
         }
     }
-    private static void enableModern(SSLSocket s){ArrayList<String> p=new ArrayList<>();for(String v:s.getSupportedProtocols())if(v.equals("TLSv1.3")||v.equals("TLSv1.2"))p.add(v);s.setEnabledProtocols(p.toArray(new String[0]));}
-    private static void enableModern(SSLServerSocket s){ArrayList<String> p=new ArrayList<>();for(String v:s.getSupportedProtocols())if(v.equals("TLSv1.3")||v.equals("TLSv1.2"))p.add(v);s.setEnabledProtocols(p.toArray(new String[0]));}
+    private static void enableTls12(SSLSocket s){s.setEnabledProtocols(new String[]{"TLSv1.2"});android.util.Log.i("QuanLianTLS","TLS socket protocols forced to TLSv1.2 only");}
+    private static void enableTls12(SSLServerSocket s){s.setEnabledProtocols(new String[]{"TLSv1.2"});android.util.Log.i("QuanLianTLS","TLS server protocols forced to TLSv1.2 only");}
     private static String hex(byte[] bytes){StringBuilder b=new StringBuilder();for(byte x:bytes)b.append(String.format(Locale.ROOT,"%02x",x&255));return b.toString();}
 }
