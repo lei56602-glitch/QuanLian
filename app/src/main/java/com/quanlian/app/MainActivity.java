@@ -518,9 +518,11 @@ public class MainActivity extends Activity {
   Switch animations=settingSwitch(general,"动画效果",prefs.getBoolean("animations_enabled",true));l.addView(general);gap(l,12);
   LinearLayout receive=homeCard();receive.addView(homeText("接收",18,0xff1b2947,true));gap(receive,10);
   Switch autoSave=settingSwitch(receive,"自动保存",prefs.getBoolean("auto_save",true));
+  receive.addView(homeText("关闭后，文件会保存在应用专属目录，不会自动写入公共下载目录。",11,0xff8491a8,false));
   TextView directory=homeText("保存目录："+(prefs.getString("save_tree_uri","").isEmpty()?"Download/小李全联":"已选择自定义目录"),13,0xff1769e8,true);directory.setPadding(0,dp(8),0,dp(12));directory.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,1004);});receive.addView(directory);
   Switch album=settingSwitch(receive,"保存到相册（图片、视频）",prefs.getBoolean("save_to_album",true));
   Switch autoComplete=settingSwitch(receive,"自动完成传输任务",prefs.getBoolean("auto_complete",false));
+  receive.addView(homeText("开启后会自动接受附近设备发来的文件请求，请仅在可信网络中启用。",11,0xffb07824,false));
   Switch history=settingSwitch(receive,"保存到历史记录",prefs.getBoolean("save_history",true));l.addView(receive);gap(l,12);
   LinearLayout device=homeCard();device.addView(homeText("设备",18,0xff1b2947,true));gap(device,10);device.addView(homeText("设备名称",14,0xff263957,true));EditText name=new EditText(this);name.setSingleLine(true);name.setText(DeviceIdentity.name(this));name.setHint("输入附近设备显示的名称");device.addView(name);Button saveName=btn("保存设备名称",0xff2878f5);saveName.setOnClickListener(v->{String value=name.getText().toString().trim();if(value.length()<2||value.length()>32){Toast.makeText(this,"设备名称需为 2–32 个字符",Toast.LENGTH_SHORT).show();return;}getSharedPreferences("device_identity",MODE_PRIVATE).edit().putString("display_name",value).apply();Toast.makeText(this,"设备名称已保存",Toast.LENGTH_SHORT).show();});gap(device,8);device.addView(saveName);l.addView(device);gap(l,12);
   LinearLayout other=homeCard();other.addView(homeText("其他",18,0xff1b2947,true));gap(other,8);
