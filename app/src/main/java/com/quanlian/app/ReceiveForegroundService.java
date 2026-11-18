@@ -30,6 +30,8 @@ public class ReceiveForegroundService extends Service {
     private final Handler main=new Handler(Looper.getMainLooper());
     private volatile boolean running=true;
     private ServerSocket server;
+    private volatile int listeningPort=-1;
+    private final Runnable udpAnnouncer=new Runnable(){@Override public void run(){if(!running)return;announceUdp();main.postDelayed(this,2500);}};
     private NsdManager nsd;
     private NsdManager.RegistrationListener registration;
     private WifiManager.MulticastLock multicastLock;
@@ -72,10 +74,36 @@ public class ReceiveForegroundService extends Service {
     private void listen(){
         try{
             server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",0));
-            int port=server.getLocalPort();publish(port);
+            int port=server.getLocalPort();listeningPort=port;publish(port);main.post(udpAnnouncer);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
             while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
         }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
+    }
+    private void announceUdp(){
+        if(!running||listeningPort<1)return;
+        JSONObject json=new JSONObject();
+        try{json.put("app","QuanLian");json.put("v",1);json.put("name",deviceName());json.put("port",listeningPort);}catch(Exception ignored){return;}
+        byte[] data=json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try{
+            Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
+            while(interfaces!=null&&interfaces.hasMoreElements()){
+                NetworkInterface ni=interfaces.nextElement();
+                try{if(!ni.isUp()||ni.isLoopback())continue;}catch(Exception e){continue;}
+                for(InterfaceAddress ia:ni.getInterfaceAddresses()){
+                    InetAddress local=ia.getAddress();
+                    if(!(local instanceof Inet4Address)||local.isLoopbackAddress())continue;
+                    LinkedHashSet<InetAddress> targets=new LinkedHashSet<>();
+                    if(ia.getBroadcast()!=null)targets.add(ia.getBroadcast());
+                    try{targets.add(InetAddress.getByName("255.255.255.255"));}catch(Exception ignored){}
+                    for(InetAddress target:targets){
+                        try(DatagramSocket socket=new DatagramSocket(new InetSocketAddress(local,0))){
+                            socket.setBroadcast(true);
+                            socket.send(new DatagramPacket(data,data.length,target,38889));
+                        }catch(Exception ignored){}
+                    }
+                }
+            }
+        }catch(Exception ignored){}
     }
     private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
     private void publish(int port){
@@ -135,7 +163,7 @@ public class ReceiveForegroundService extends Service {
     private void broadcastStatus(String text,int port,int progress){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);if(progress>=0)i.putExtra(EXTRA_PROGRESS,progress);sendBroadcast(i);}
     @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
     @Override public void onDestroy(){
-        running=false;try{if(server!=null)server.close();}catch(Exception ignored){}
+        running=false;main.removeCallbacks(udpAnnouncer);try{if(server!=null)server.close();}catch(Exception ignored){}
         for(Socket socket:activeSockets){try{socket.close();}catch(Exception ignored){}}activeSockets.clear();releaseReceiveWakeLock();
         try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}
         try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}
