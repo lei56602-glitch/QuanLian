@@ -20,7 +20,7 @@ public final class TlsIdentity {
             KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA,"AndroidKeyStore");
             gen.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
                 .setKeySize(2048).setDigests(KeyProperties.DIGEST_SHA256)
-                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                 .setCertificateSubject(new X500Principal("CN=QuanLian Device"))
                 .setCertificateSerialNumber(java.math.BigInteger.valueOf(Math.abs(new SecureRandom().nextLong())+1))
                 .setCertificateNotBefore(new Date(System.currentTimeMillis()-86400000L))
