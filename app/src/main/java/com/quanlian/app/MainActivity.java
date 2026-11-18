@@ -269,6 +269,7 @@ public class MainActivity extends Activity {
      else {DiagnosticLog.error(MainActivity.this,"SEND_RESULT_FAILED",new Exception(error==null?"传输中断":error));new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
     }
    }
+  }
   };
   IntentFilter filter=new IntentFilter();
   filter.addAction(TransferForegroundService.ACTION_PROGRESS);
