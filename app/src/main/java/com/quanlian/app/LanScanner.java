@@ -17,7 +17,7 @@ public final class LanScanner {
             WifiManager wifi=(WifiManager)context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             if(wifi==null||wifi.getDhcpInfo()==null){status.accept("无法读取 Wi-Fi 子网信息");pool.shutdownNow();return;}
             android.net.DhcpInfo dhcp=wifi.getDhcpInfo();
-            int ip=dhcp.ipAddress, mask=dhcp.netmask;
+            int ip=Integer.reverseBytes(dhcp.ipAddress), mask=Integer.reverseBytes(dhcp.netmask);
             if(ip==0||mask==0){status.accept("当前网络不支持读取 IPv4 子网");pool.shutdownNow();return;}
             int network=ip&mask, broadcast=network|~mask;
             long hosts=(broadcast&0xffffffffL)-(network&0xffffffffL)-1;
@@ -28,7 +28,7 @@ public final class LanScanner {
                 final int candidate=network+i;
                 pool.execute(()->{
                     try{
-                        InetAddress address=InetAddress.getByAddress(new byte[]{(byte)candidate,(byte)(candidate>>>8),(byte)(candidate>>>16),(byte)(candidate>>>24)});
+                        InetAddress address=InetAddress.getByAddress(new byte[]{(byte)(candidate>>>24),(byte)(candidate>>>16),(byte)(candidate>>>8),(byte)candidate});
                         if(address.isLoopbackAddress()||address.isAnyLocalAddress())return;
                         String fp=TlsIdentity.inspectFingerprint(address.getHostAddress(),scanPort);
                         if(LanDiscovery.verify(address,scanPort,fp)){
