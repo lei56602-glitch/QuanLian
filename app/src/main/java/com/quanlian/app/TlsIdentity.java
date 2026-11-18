@@ -68,53 +68,80 @@ public final class TlsIdentity {
      * Never silently fall back to the mobile-data default route.
      */
     private static void bindToPeerNetwork(Context context, Socket socket, InetAddress peer) throws Exception {
-        ConnectivityManager cm=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        Network best=null;
-        int bestScore=Integer.MIN_VALUE;
-        if(cm!=null){
-            Network[] networks=cm.getAllNetworks();
-            for(Network network:networks){
-                LinkProperties lp=cm.getLinkProperties(network);
-                if(lp==null)continue;
-                NetworkCapabilities caps=cm.getNetworkCapabilities(network);
-                for(RouteInfo route:lp.getRoutes()){
-                    if(route.matches(peer)){
-                        int prefix=route.getDestination()==null?0:route.getDestination().getPrefixLength();
-                        int score=prefix*10+(caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)?5:0);
-                        if(score>bestScore){best=network;bestScore=score;}
+        // First match the peer against real local IPv4 interface subnets. This is
+        // essential on Android SoftAP owners: ConnectivityManager may expose a
+        // cellular/default route before the tethering AP interface.
+        if (peer instanceof Inet4Address) {
+            ArrayList<InterfaceAddress> matches = new ArrayList<>();
+            ArrayList<NetworkInterface> owners = new ArrayList<>();
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface ni = interfaces.nextElement();
+                try { if (!ni.isUp() || ni.isLoopback()) continue; } catch (Exception e) { continue; }
+                for (InterfaceAddress entry : ni.getInterfaceAddresses()) {
+                    InetAddress local = entry.getAddress();
+                    int prefix = entry.getNetworkPrefixLength();
+                    if (!(local instanceof Inet4Address) || prefix < 1 || prefix > 32) continue;
+                    byte[] a = local.getAddress(), b = peer.getAddress();
+                    boolean same = true;
+                    for (int bit = 0; bit < prefix; bit++) {
+                        int mask = 1 << (7 - (bit % 8));
+                        if ((a[bit / 8] & mask) != (b[bit / 8] & mask)) { same = false; break; }
                     }
+                    android.util.Log.d("QuanLianNetwork", "Interface candidate="+ni.getName()
+                        +", local="+local.getHostAddress()+"/"+prefix+", peer="+peer.getHostAddress()
+                        +", sameSubnet="+same);
+                    if (same) { matches.add(entry); owners.add(ni); }
+                }
+            }
+            if (!matches.isEmpty()) {
+                int best = 0;
+                for (int i = 1; i < matches.size(); i++) {
+                    int p = matches.get(i).getNetworkPrefixLength();
+                    int bp = matches.get(best).getNetworkPrefixLength();
+                    String name = owners.get(i).getName().toLowerCase(Locale.ROOT);
+                    String bestName = owners.get(best).getName().toLowerCase(Locale.ROOT);
+                    boolean wifiLike = name.startsWith("wlan") || name.contains("ap") || name.contains("wifi");
+                    boolean bestWifiLike = bestName.startsWith("wlan") || bestName.contains("ap") || bestName.contains("wifi");
+                    if (p > bp || (p == bp && wifiLike && !bestWifiLike)) best = i;
+                }
+                InetAddress local = matches.get(best).getAddress();
+                NetworkInterface ni = owners.get(best);
+                socket.bind(new InetSocketAddress(local, 0));
+                android.util.Log.i("QuanLianNetwork", "BOUND_BY_SUBNET interface="+ni.getName()
+                    +", local="+local.getHostAddress()+", peer="+peer.getHostAddress());
+                return;
+            }
+        }
+
+        // Only use an explicitly Wi-Fi transport route as a fallback. Never bind
+        // a peer on the hotspot subnet to cellular or VPN just because its
+        // default route happens to match 0.0.0.0/0.
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network bestWifi = null;
+        int bestScore = Integer.MIN_VALUE;
+        if (cm != null) {
+            for (Network network : cm.getAllNetworks()) {
+                LinkProperties lp = cm.getLinkProperties(network);
+                NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+                if (lp == null || caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+                for (RouteInfo route : lp.getRoutes()) {
+                    if (!route.matches(peer)) continue;
+                    int prefix = route.getDestination() == null ? 0 : route.getDestination().getPrefixLength();
+                    int score = prefix;
+                    if (score > bestScore) { bestWifi = network; bestScore = score; }
+                    android.util.Log.d("QuanLianNetwork", "Wi-Fi route candidate peer="+peer.getHostAddress()
+                        +", destination="+route.getDestination()+", score="+score);
                 }
             }
         }
-        if(best!=null){
-            best.bindSocket(socket);
-            android.util.Log.i("QuanLianNetwork","Bound TCP socket to Android Network for peer "+peer.getHostAddress());
+        if (bestWifi != null) {
+            bestWifi.bindSocket(socket);
+            android.util.Log.i("QuanLianNetwork", "BOUND_TO_WIFI_NETWORK peer="+peer.getHostAddress()
+                +", routeScore="+bestScore);
             return;
         }
-        // SoftAP owner devices may expose the AP interface but not a Network route.
-        Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
-        while(interfaces!=null&&interfaces.hasMoreElements()){
-            NetworkInterface ni=interfaces.nextElement();
-            try{if(!ni.isUp()||ni.isLoopback())continue;}catch(Exception e){continue;}
-            for(InterfaceAddress entry:ni.getInterfaceAddresses()){
-                InetAddress local=entry.getAddress();
-                if(!(local instanceof Inet4Address)||!(peer instanceof Inet4Address))continue;
-                int prefix=entry.getNetworkPrefixLength();
-                if(prefix<1||prefix>32)continue;
-                byte[] a=local.getAddress(),b=peer.getAddress();
-                boolean same=true;
-                for(int bit=0;bit<prefix;bit++){
-                    int mask=1<<(7-(bit%8));
-                    if((a[bit/8]&mask)!=(b[bit/8]&mask)){same=false;break;}
-                }
-                if(same){
-                    socket.bind(new InetSocketAddress(local,0));
-                    android.util.Log.i("QuanLianNetwork","Bound TCP socket to "+ni.getName()+" / "+local.getHostAddress()+" for peer "+peer.getHostAddress());
-                    return;
-                }
-            }
-        }
-        throw new java.io.IOException("找不到通往对方 "+peer.getHostAddress()+" 的局域网接口，已阻止错误地走移动数据");
+        throw new IOException("未找到与对方 "+peer.getHostAddress()+" 同网段的热点/Wi-Fi 接口；为避免误走移动数据，已停止连接");
     }
 
     public static Socket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
