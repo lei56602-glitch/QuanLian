@@ -40,7 +40,7 @@ public class MainActivity extends Activity {
  private final ExecutorService workers=Executors.newCachedThreadPool();
  private NsdManager nsd; private NsdManager.RegistrationListener registration; private LanDiscovery.Listener udpDiscovery;
  private NsdManager.DiscoveryListener discovery; private WifiManager.MulticastLock lock; private final android.os.Handler discoveryHandler=new android.os.Handler(android.os.Looper.getMainLooper());
- private ServerSocket server; private volatile boolean alive=true; private int port=-1, page=0;
+ private ServerSocket server; private volatile boolean alive=true; private volatile int port=-1; private int page=0;
  private LinearLayout deviceList; private TextView deviceStatus, receiveStatus;
  private ProgressDialog sendProgress; private BroadcastReceiver sendReceiver, receiveReceiver; private Device retryDevice;
  static class Device { String name,key,fingerprint; InetAddress host; int port; long udpLastSeen; boolean udpSeen,nsdSeen; Device(String n,String k,InetAddress h,int p,String fp){name=n;key=k;host=h;port=p;fingerprint=fp;} }
@@ -67,8 +67,14 @@ public class MainActivity extends Activity {
   try{WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);lock=w.createMulticastLock("QuanLianLAN");lock.setReferenceCounted(false);lock.acquire();}catch(Exception ignored){}
   udpDiscovery=LanDiscovery.listen(announcement->{
    if(!alive||announcement==null||announcement.host==null||announcement.port<1||myName().equals(announcement.name))return;
+   runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到设备广播，正在验证加密身份…");});
    workers.execute(()->{
-    if(!LanDiscovery.verify(announcement.host,announcement.port,announcement.fingerprint))return;
+    boolean verified=LanDiscovery.verify(announcement.host,announcement.port,announcement.fingerprint);
+    if(!verified){
+     android.util.Log.w("QuanLianDiscovery","广播已收到但 TLS 验证失败：host="+announcement.host.getHostAddress()+", port="+announcement.port);
+     runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到对方广播，但 TLS 身份验证失败；请检查双方版本和接收服务。");});
+     return;
+    }
     runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
    });
   });
@@ -77,7 +83,7 @@ public class MainActivity extends Activity {
  }
  private void runActiveLanScan(){
   if(!alive)return;
-  workers.execute(()->LanScanner.scan(this,38890,announcement->runOnUiThread(()->{
+  int scanPort=port>0?port:38890;\n  workers.execute(()->LanScanner.scan(this,scanPort,announcement->runOnUiThread(()->{
    if(!alive||announcement==null||announcement.host==null)return;
    synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}
    refreshDevices();
@@ -273,7 +279,7 @@ public class MainActivity extends Activity {
   gap(l,18);l.addView(txt("已收藏设备",18,-1,true));for(FavoriteDevices.Entry entry:FavoriteDevices.list(this)){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=txt(entry.name+"\\n"+entry.host+":"+entry.port,14,-1,false);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button connect=btn("连接",0xff1f77dc);connect.setOnClickListener(v->connectFavorite(entry));row.addView(connect);Button remove=btn("删除",0xff304b70);remove.setOnClickListener(v->{FavoriteDevices.remove(this,entry.host,entry.port);devicePage();});row.addView(remove);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);l.addView(row,rp);}install(l);}
  private void scanSubnet(){
   if(deviceStatus!=null)deviceStatus.setText("正在主动扫描局域网 IPv4 地址…");
-  workers.execute(()->LanScanner.scan(this,38890,announcement->{
+  int scanPort=port>0?port:38890;\n  workers.execute(()->LanScanner.scan(this,scanPort,announcement->{
    if(myName().equals(announcement.name))return;
    runOnUiThread(()->{if(!alive)return;synchronized(devices){Device d=devices.get(announcement.id);if(d==null){d=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(d.key,d);}d.name=announcement.name;d.host=announcement.host;d.port=announcement.port;d.fingerprint=announcement.fingerprint;d.udpSeen=true;d.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
   },message->runOnUiThread(()->{if(deviceStatus!=null)deviceStatus.setText(message);})));
