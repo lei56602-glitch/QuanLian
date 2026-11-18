@@ -80,11 +80,30 @@ public final class LanDiscovery {
  public static Listener listen(Consumer<Announcement> callback){return new Listener(callback);}
 
  public static boolean verify(InetAddress host,int port,String fingerprint){
-  if(host==null||port<1||port>65535||fingerprint==null)return false;
+  return verifyDetailed(host,port,fingerprint)==null;
+ }
+
+ /** Returns null on success, otherwise a stage-specific diagnostic for the UI and Logcat. */
+ public static String verifyDetailed(InetAddress host,int port,String fingerprint){
+  if(host==null)return "对方 IP 地址为空";
+  if(port<1||port>65535)return "对方公布的 TCP 端口无效："+port;
+  if(fingerprint==null||!fingerprint.matches("(?i)[0-9a-f]{64}"))return "广播中的证书指纹格式无效";
   try(javax.net.ssl.SSLSocket s=TlsIdentity.connect(host.getHostAddress(),port,fingerprint)){
-   DataOutputStream out=new DataOutputStream(s.getOutputStream());DataInputStream in=new DataInputStream(s.getInputStream());
-   out.writeUTF(PROBE);out.flush();return PROBE_OK.equals(in.readUTF());
-  }catch(Exception e){Log.w(TAG,"TLS discovery verification failed for "+host+":"+port,e);return false;}
+   try{
+    DataOutputStream out=new DataOutputStream(s.getOutputStream());DataInputStream in=new DataInputStream(s.getInputStream());
+    out.writeUTF(PROBE);out.flush();
+    String response=in.readUTF();
+    if(!PROBE_OK.equals(response))return "TLS 已建立，但设备探测协议响应不匹配："+response;
+    return null;
+   }catch(Exception e){
+    String detail="TLS 已建立，但探测协议失败 ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
+    Log.e(TAG,detail,e);return detail;
+   }
+  }catch(Exception e){
+   String detail="TCP/TLS 握手或证书校验失败 ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
+   Log.e(TAG,"Discovery verification failed for "+host+":"+port+"; "+detail,e);
+   return detail;
+  }
  }
 
  public static void announce(String id,String name,int port){try{announce(id,name,port,TlsIdentity.fingerprint());}catch(Exception e){Log.e(TAG,"TLS identity unavailable for discovery",e);}}
