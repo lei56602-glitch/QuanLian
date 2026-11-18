@@ -138,7 +138,7 @@ public class ReceiveForegroundService extends Service {
                 addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
-        }catch(Exception e){broadcastStatus("接收失败："+e.getMessage(),port());}
+        }catch(Exception e){android.util.Log.e("QuanLianReceive","TLS/接收会话处理失败",e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
         finally{releaseReceiveWakeLock();}
     }
     private int port(){return server==null?-1:server.getLocalPort();}
