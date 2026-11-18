@@ -389,7 +389,18 @@ public class MainActivity extends Activity {
  }
 
  private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
- @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(r!=PICK||c!=RESULT_OK||d==null)return;if(d.getClipData()!=null){for(int i=0;i<d.getClipData().getItemCount();i++)addFile(d.getClipData().getItemAt(i).getUri());}else if(d.getData()!=null)addFile(d.getData());sendPage();}
+ @Override protected void onActivityResult(int r,int c,Intent d){
+  super.onActivityResult(r,c,d);if(c!=RESULT_OK||d==null)return;
+  if(r==1003&&d.getData()!=null){
+   Uri tree=d.getData();try{getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}
+   try{String rootId=android.provider.DocumentsContract.getTreeDocumentId(tree);int[] count={0};addFolderChildren(tree,rootId,count);Toast.makeText(this,"已添加文件夹中的 "+count[0]+" 个文件",Toast.LENGTH_LONG).show();}catch(Exception e){Toast.makeText(this,"读取文件夹失败："+e.getMessage(),Toast.LENGTH_LONG).show();}
+   sendPage();return;
+  }
+  if(r!=PICK)return;
+  if(d.getClipData()!=null){for(int i=0;i<d.getClipData().getItemCount();i++)addFile(d.getClipData().getItemAt(i).getUri());}
+  else if(d.getData()!=null)addFile(d.getData());
+  sendPage();
+ }
  private void addFile(Uri u){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}String n="文件";long z=-1;try(Cursor c=getContentResolver().query(u,null,null,null,null)){if(c!=null&&c.moveToFirst()){int ni=c.getColumnIndex(OpenableColumns.DISPLAY_NAME),si=c.getColumnIndex(OpenableColumns.SIZE);if(ni>=0)n=c.getString(ni);if(si>=0&&!c.isNull(si))z=c.getLong(si);}}catch(Exception ignored){}uris.add(u);names.add(n);sizes.add(z);}
  private String sizeText(long n){if(n<0)return "大小未知";if(n<1024)return n+" B";if(n<1048576)return String.format(Locale.getDefault(),"%.1f KB",n/1024d);if(n<1073741824)return String.format(Locale.getDefault(),"%.1f MB",n/1048576d);return String.format(Locale.getDefault(),"%.2f GB",n/1073741824d);}
  private void selectedPage(){sendPage();}
@@ -398,10 +409,15 @@ public class MainActivity extends Activity {
    page=1;deviceList=null;deviceStatus=null;
    LinearLayout l=col();l.setBackgroundColor(0xfff5f8ff);
    LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
-   LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(homeText("发送文件",25,0xff182747,true));gap(titles,4);titles.addView(homeText("添加文件，然后点击目标设备即可发送",12,0xff8491a8,false));top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));
-   TextView refresh=homeText("↻",24,0xff1769e8,true);refresh.setGravity(Gravity.CENTER);refresh.setPadding(dp(9),dp(5),dp(9),dp(5));refresh.setBackground(shape(0xffffffff,14));refresh.setOnClickListener(v->refreshDiscovery());top.addView(refresh);
-   TextView favorites=homeText("☆",23,0xffd99b22,true);favorites.setGravity(Gravity.CENTER);favorites.setPadding(dp(10),dp(5),dp(10),dp(5));favorites.setOnClickListener(v->showFavorites());top.addView(favorites);
-   TextView settings=homeText("⚙",21,0xff41618e,true);settings.setGravity(Gravity.CENTER);settings.setPadding(dp(9),dp(5),dp(9),dp(5));settings.setOnClickListener(v->settingsPage());top.addView(settings);l.addView(top);gap(l,18);
+   LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(homeText("发送文件",25,0xff182747,true));gap(titles,4);titles.addView(homeText("选择要分享的内容",12,0xff8491a8,false));top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));l.addView(top);gap(l,14);
+   android.widget.GridLayout categories=new android.widget.GridLayout(this);categories.setColumnCount(3);categories.setUseDefaultMargins(false);
+   addSendCategory(categories,"▤","文件",()->pick());
+   addSendCategory(categories,"▧","媒体",()->pickMedia());
+   addSendCategory(categories,"▣","剪贴板",()->addClipboardText());
+   addSendCategory(categories,"T","文本",()->createTextFile());
+   addSendCategory(categories,"▱","文件夹",()->pickFolder());
+   addSendCategory(categories,"APK","应用",()->pickApk());
+   l.addView(categories);gap(l,14);
    LinearLayout preview=homeCard();LinearLayout previewHead=new LinearLayout(this);previewHead.setGravity(Gravity.CENTER_VERTICAL);previewHead.addView(homeText("文件预览",18,0xff1b2947,true),new LinearLayout.LayoutParams(0,-2,1));
    TextView add=homeText("+ 添加文件",13,0xff1769e8,true);add.setPadding(dp(10),dp(7),dp(10),dp(7));add.setBackground(shape(0xffedf4ff,12));add.setOnClickListener(v->pick());previewHead.addView(add);preview.addView(previewHead);gap(preview,10);
    long total=0;for(long z:sizes)if(z>0)total+=z;
@@ -443,10 +459,78 @@ public class MainActivity extends Activity {
     preview.addView(fileGrid);
    }
    l.addView(preview);gap(l,18);
-   LinearLayout target=homeCard();LinearLayout targetHead=new LinearLayout(this);targetHead.setGravity(Gravity.CENTER_VERTICAL);targetHead.addView(homeText("目标设备",18,0xff1b2947,true),new LinearLayout.LayoutParams(0,-2,1));
-   TextView scan=homeText("刷新设备",12,0xff1769e8,true);scan.setPadding(dp(10),dp(7),dp(10),dp(7));scan.setBackground(shape(0xffedf4ff,12));scan.setOnClickListener(v->refreshDiscovery());targetHead.addView(scan);target.addView(targetHead);gap(target,8);
+   LinearLayout target=homeCard();LinearLayout targetHead=new LinearLayout(this);targetHead.setGravity(Gravity.CENTER_VERTICAL);targetHead.addView(homeText("附近设备",18,0xff1b2947,true),new LinearLayout.LayoutParams(0,-2,1));
+   TextView refresh=homeText("↻",22,0xff1769e8,true);refresh.setGravity(Gravity.CENTER);refresh.setContentDescription("刷新设备");refresh.setPadding(dp(10),dp(6),dp(10),dp(6));refresh.setBackground(shape(0xffedf4ff,12));refresh.setOnClickListener(v->refreshDiscovery());targetHead.addView(refresh);
+   TextView favorites=homeText("☆",21,0xffd99b22,true);favorites.setGravity(Gravity.CENTER);favorites.setContentDescription("收藏设备");favorites.setPadding(dp(10),dp(6),dp(10),dp(6));favorites.setOnClickListener(v->showFavorites());targetHead.addView(favorites);
+   TextView settings=homeText("⚙",20,0xff41618e,true);settings.setGravity(Gravity.CENTER);settings.setContentDescription("发送设置");settings.setPadding(dp(10),dp(6),dp(10),dp(6));settings.setOnClickListener(v->showSendOptions());targetHead.addView(settings);target.addView(targetHead);gap(target,8);
    deviceStatus=homeText("正在搜索附近设备…",12,0xff8491a8,false);target.addView(deviceStatus);gap(target,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);target.addView(deviceList);l.addView(target);refreshDevices();
    installFlow(l,1);
+  }
+  private void addSendCategory(android.widget.GridLayout grid,String symbol,String label,Runnable action){
+   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(shape(Color.WHITE,16));tile.setFocusable(true);tile.setClickable(true);
+   TextView icon=homeText(symbol,22,0xff2878f5,true);icon.setGravity(Gravity.CENTER);tile.addView(icon);gap(tile,6);
+   TextView title=homeText(label,13,0xff263957,true);title.setGravity(Gravity.CENTER);tile.addView(title);
+   tile.setOnClickListener(v->action.run());
+   android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(86);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(4),dp(4),dp(4),dp(4));grid.addView(tile,p);
+  }
+  private void pickMedia(){
+   Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");
+   i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/*","video/*","audio/*"});i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+   i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);
+  }
+  private void pickApk(){
+   Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/vnd.android.package-archive");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);
+   i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);
+  }
+  private void addClipboardText(){
+   android.content.ClipboardManager cm=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+   if(cm==null||!cm.hasPrimaryClip()||cm.getPrimaryClip().getItemCount()==0){Toast.makeText(this,"剪贴板为空",Toast.LENGTH_SHORT).show();return;}
+   CharSequence value=cm.getPrimaryClip().getItemAt(0).coerceToText(this);if(value==null||value.length()==0){Toast.makeText(this,"剪贴板中没有可发送的文本",Toast.LENGTH_SHORT).show();return;}
+   addTextAsFile(value.toString(),"剪贴板.txt");
+  }
+  private void createTextFile(){
+   EditText input=new EditText(this);input.setMinLines(4);input.setGravity(Gravity.TOP|Gravity.START);input.setHint("输入要发送的文本内容");
+   new AlertDialog.Builder(this).setTitle("发送文本").setView(input).setNegativeButton("取消",null).setPositiveButton("添加到发送列表",(d,w)->{String value=input.getText().toString();if(value.trim().isEmpty()){Toast.makeText(this,"文本内容不能为空",Toast.LENGTH_SHORT).show();return;}addTextAsFile(value,"文本.txt");}).show();
+  }
+  private void addTextAsFile(String value,String fileName){
+   try{File dir=new File(getCacheDir(),"shared_text");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");File file=new File(dir,System.currentTimeMillis()+"_"+fileName);try(OutputStream out=new FileOutputStream(file)){out.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));}addFile(Uri.fromFile(file));sendPage();}
+   catch(Exception e){Toast.makeText(this,"无法创建文本文件："+e.getMessage(),Toast.LENGTH_LONG).show();}
+  }
+  private void pickFolder(){
+   Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,1003);
+  }
+  private void addFolderChildren(Uri treeUri,String documentId,int[] count){
+   if(count[0]>=500)return;
+   Uri children=android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri,documentId);
+   String[] projection={android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE};
+   try(Cursor cursor=getContentResolver().query(children,projection,null,null,null)){
+    if(cursor==null)return;
+    while(cursor.moveToNext()&&count[0]<500){
+     String id=cursor.getString(0),name=cursor.getString(1),mime=cursor.getString(2);
+     if(android.provider.DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)){addFolderChildren(treeUri,id,count);}
+     else{Uri child=android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri,id);addFile(child);count[0]++;}
+    }
+   }catch(Exception e){android.util.Log.w("QuanLianFiles","Unable to enumerate selected folder",e);}
+  }
+  private void showSendOptions(){
+   String[] options={"单个接收者","多个接收者","通过连接分享"};
+   new AlertDialog.Builder(this).setTitle("发送方式").setItems(options,(dialog,which)->{
+    if(which==0){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","single").apply();Toast.makeText(this,"已选择单个接收者，点击一个附近设备即可发送",Toast.LENGTH_SHORT).show();}
+    else if(which==1){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","multiple").apply();showMultipleReceiverSelection();}
+    else{getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","connection").apply();manualConnect();}
+   }).setNegativeButton("取消",null).show();
+  }
+  private void showMultipleReceiverSelection(){
+   ArrayList<Device> list; synchronized(devices){list=new ArrayList<>(devices.values());}
+   if(list.isEmpty()){Toast.makeText(this,"暂未发现附近设备",Toast.LENGTH_SHORT).show();return;}
+   String[] labels=new String[list.size()];boolean[] checked=new boolean[list.size()];
+   for(int i=0;i<list.size();i++)labels[i]=list.get(i).name;
+   new AlertDialog.Builder(this).setTitle("选择多个接收者").setMultiChoiceItems(labels,checked,(d,which,on)->checked[which]=on)
+    .setNegativeButton("取消",null).setPositiveButton("完成",(d,w)->{
+     ArrayList<String> selected=new ArrayList<>();for(int i=0;i<checked.length;i++)if(checked[i])selected.add(list.get(i).key);
+     getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("selected_receivers",android.text.TextUtils.join(",",selected)).apply();
+     Toast.makeText(this,"已选择 "+selected.size()+" 个接收设备。请继续完善批量发送队列后再执行发送。",Toast.LENGTH_LONG).show();
+    }).show();
   }
   private void showFavorites(){List<FavoriteDevices.Entry> list=FavoriteDevices.list(this);if(list.isEmpty()){Toast.makeText(this,"还没有收藏设备",Toast.LENGTH_SHORT).show();return;}String[] labels=new String[list.size()];for(int i=0;i<list.size();i++)labels[i]=list.get(i).name;new AlertDialog.Builder(this).setTitle("收藏设备").setItems(labels,(d,which)->connectFavorite(list.get(which))).setNegativeButton("关闭",null).show();}
   private void scanSubnet(){
