@@ -105,7 +105,8 @@ public class MainActivity extends Activity {
   }
   registerReceiveReceiver();
   startLan();
-  restorePage();\n  handleIncomingShare(getIntent());
+  restorePage();
+  handleIncomingShare(getIntent());
  }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
  private void restorePage(){switch(page){case 6:settingsPage();break;case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:home();}}
