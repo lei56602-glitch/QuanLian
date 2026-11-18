@@ -94,14 +94,14 @@ public final class LanDiscovery {
     DataOutputStream out=new DataOutputStream(s.getOutputStream());DataInputStream in=new DataInputStream(s.getInputStream());
     out.writeUTF(PROBE);out.flush();
     String response=in.readUTF();
-    if(!PROBE_OK.equals(response))return "TLS 已建立，但设备探测协议响应不匹配："+response;
+    if(!PROBE_OK.equals(response))return (TlsIdentity.plainMode(context)?"明文 TCP 已连接":"TLS 已建立")+"，但设备探测协议响应不匹配："+response;
     return null;
    }catch(Exception e){
-    String detail="TLS 已建立，但探测协议失败 ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
+    String detail=(TlsIdentity.plainMode(context)?"明文 TCP 已连接，但探测协议失败":"TLS 已建立，但探测协议失败")+" ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
     Log.e(TAG,detail,e);return detail;
    }
   }catch(Exception e){
-   String detail="TCP/TLS 握手或证书校验失败 ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
+   String detail=(TlsIdentity.plainMode(context)?"明文 TCP 连接失败":"TCP/TLS 握手或证书校验失败")+" ["+e.getClass().getSimpleName()+"]: "+e.getMessage();
    Log.e(TAG,"Discovery verification failed for "+host+":"+port+"; "+detail,e);
    return detail;
   }
