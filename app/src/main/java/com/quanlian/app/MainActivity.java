@@ -293,7 +293,20 @@ public class MainActivity extends Activity {
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
   l.addView(txt("小李全联",30,-1,true));TextView sub=txt("让所有设备，自由交换文件",14,0xffabc6e4,false);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.topMargin=dp(4);sp.bottomMargin=dp(22);l.addView(sub,sp);
   LinearLayout row=new LinearLayout(this);Button send=btn("↑  发送文件",0xff1f77dc),recv=btn("↓  接收文件",0xff1f9e8f);LinearLayout.LayoutParams a=new LinearLayout.LayoutParams(0,dp(62),1);a.rightMargin=dp(6);row.addView(send,a);LinearLayout.LayoutParams b=new LinearLayout.LayoutParams(0,dp(62),1);b.leftMargin=dp(6);row.addView(recv,b);l.addView(row);send.setOnClickListener(v->pick());recv.setOnClickListener(v->receivePage());
-  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);gap(l,24);l.addView(txt("附近设备",20,-1,true));gap(l,8);deviceStatus=txt("正在搜索局域网设备…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();gap(l,24);TextView foot=txt("Wi-Fi 局域网直连优先 · 无广告 · 无强制账号",12,0xff96b1cf,false);foot.setGravity(Gravity.CENTER);l.addView(foot);install(l);
+  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);
+  if(BuildConfig.DEBUG){
+   gap(l,10);Switch plainSwitch=new Switch(this);plainSwitch.setText("明文 TCP 诊断模式（不加密，仅测试）");plainSwitch.setTextColor(0xffffc66d);plainSwitch.setTextSize(13);
+   plainSwitch.setChecked(TlsIdentity.plainMode(this));
+   plainSwitch.setOnCheckedChangeListener((button,checked)->{
+    getSharedPreferences(TlsIdentity.PREFS,MODE_PRIVATE).edit().putBoolean(TlsIdentity.KEY_PLAIN,checked).apply();
+    Toast.makeText(this,checked?"已开启明文诊断：两台测试设备都必须开启":"已关闭明文诊断：恢复 TLS 加密",Toast.LENGTH_LONG).show();
+    stopService(new Intent(this,ReceiveForegroundService.class));
+    new android.os.Handler(getMainLooper()).postDelayed(()->ReceiveForegroundService.start(this),700);
+    refreshDiscovery();
+   });
+   l.addView(plainSwitch);
+  }
+  gap(l,24);l.addView(txt("附近设备",20,-1,true));gap(l,8);deviceStatus=txt("正在搜索局域网设备…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();gap(l,24);TextView foot=txt("Wi-Fi 局域网直连优先 · 无广告 · 无强制账号",12,0xff96b1cf,false);foot.setGravity(Gravity.CENTER);l.addView(foot);install(l);
  }
  private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
  @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(r!=PICK||c!=RESULT_OK||d==null)return;uris.clear();names.clear();sizes.clear();if(d.getClipData()!=null){for(int i=0;i<d.getClipData().getItemCount();i++)addFile(d.getClipData().getItemAt(i).getUri());}else if(d.getData()!=null)addFile(d.getData());selectedPage();}
