@@ -62,3 +62,4 @@ jobs:
           if-no-files-found: error
 # Trigger signed release build after repository signing secrets setup.
 # Build includes the complete secure LAN discovery stack.
+# UI refresh branch: validate responsive layouts and Android build.
