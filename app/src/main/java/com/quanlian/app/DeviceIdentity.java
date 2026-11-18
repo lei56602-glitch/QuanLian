@@ -31,9 +31,8 @@ public final class DeviceIdentity {
         String generated=prefs.getString("generated_name",null);
         if(generated==null||generated.trim().isEmpty()){
             String[] names={"蓝鲸","星河","云雀","极光","海风","晨曦","山岚","流星","白鹭","远帆","青松","月影"};
-            String[] suffix={"号","号","号"};
             String id=id(context);
-            int index=Math.abs(id.hashCode())%names.length;
+            int index=Math.floorMod(id.hashCode(),names.length);
             String tail=id.replaceAll("[^A-Za-z0-9]","");
             if(tail.length()>4)tail=tail.substring(tail.length()-4);
             generated=names[index]+"-"+tail;
