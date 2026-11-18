@@ -201,7 +201,8 @@ public class TransferForegroundService extends Service {
                     long offset=in.readLong();
                     if(offset<0||offset>file.size)throw new IOException("接收端续传位置无效");
                     sent+=offset;
-                    try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(file.uri))) {\n                        if(input==null)throw new IOException("无法重新读取文件："+file.name);
+                    try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(file.uri))) {
+                        if(input==null)throw new IOException("无法重新读取文件："+file.name);
                         long skipped=0;while(skipped<offset){long n=input.skip(offset-skipped);if(n<=0){if(input.read()==-1)throw new EOFException("无法定位续传位置");n=1;}skipped+=n;}
                         byte[] chunk=new byte[1024*1024];
                         long remainingFile=file.size-offset;
