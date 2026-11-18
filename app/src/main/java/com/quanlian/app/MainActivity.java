@@ -273,7 +273,7 @@ public class MainActivity extends Activity {
    }else if(ReceiveForegroundService.ACTION_INCOMING.equals(i.getAction())){
     String id=i.getStringExtra(ReceiveForegroundService.EXTRA_ID),sender=i.getStringExtra(ReceiveForegroundService.EXTRA_SENDER);
     int count=i.getIntExtra(ReceiveForegroundService.EXTRA_COUNT,0);long total=i.getLongExtra(ReceiveForegroundService.EXTRA_TOTAL,0);
-    AlertDialog receiveDialog=new AlertDialog.Builder(MainActivity.this).setTitle("接收文件请求")
+    AlertDialog receiveDialog=new AlertDialog.Builder(MainActivity.this).setTitle(ui("接收文件请求"))
      .setMessage("发送方："+(sender==null?"附近设备":sender)+"\n文件总数："+count+" 个\n文件总大小："+sizeText(total))
      .setPositiveButton("接受",(d,w)->ReceiveForegroundService.decide(MainActivity.this,id,true))
      .setNegativeButton("拒绝",(d,w)->ReceiveForegroundService.decide(MainActivity.this,id,false))
@@ -537,7 +537,7 @@ public class MainActivity extends Activity {
  }
  private Spinner settingSpinner(LinearLayout card,String label,String[] values,int selected){card.addView(homeText(label,15,0xff1b2947,true));gap(card,6);Spinner spinner=new Spinner(this);String[] translated=values.clone();for(int i=0;i<translated.length;i++)translated[i]=ui(translated[i]);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,translated);spinner.setAdapter(adapter);spinner.setSelection(Math.max(0,Math.min(selected,values.length-1)));card.addView(spinner);gap(card,12);return spinner;}
  private Switch settingSwitch(LinearLayout card,String label,boolean checked){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.addView(homeText(label,14,0xff263957,true),new LinearLayout.LayoutParams(0,-2,1));Switch toggle=new Switch(this);toggle.setChecked(checked);row.addView(toggle);card.addView(row);gap(card,8);return toggle;}
- private void infoPage(String title,String body){new AlertDialog.Builder(this).setTitle(title).setMessage(body).setPositiveButton("知道了",null).show();}
+ private void infoPage(String title,String body){new AlertDialog.Builder(this).setTitle(ui(title)).setMessage(ui(body)).setPositiveButton("知道了",null).show();}
  private void settingsPage(){
   page=6;android.content.SharedPreferences prefs=getSharedPreferences("ui_settings",MODE_PRIVATE);LinearLayout l=col();l.setBackgroundColor(pageBackground());header(l,"设置","通用、接收、设备与其他");
   LinearLayout general=homeCard();general.addView(homeText("通用",18,0xff1b2947,true));gap(general,10);
@@ -554,13 +554,13 @@ public class MainActivity extends Activity {
   Switch autoComplete=settingSwitch(receive,"自动完成传输任务",prefs.getBoolean("auto_complete",false));
   receive.addView(homeText("开启后会自动接受附近设备发来的文件请求，请仅在可信网络中启用。",11,0xffb07824,false));
   Switch history=settingSwitch(receive,"保存到历史记录",prefs.getBoolean("save_history",true));l.addView(receive);gap(l,12);
-  LinearLayout device=homeCard();device.addView(homeText("设备",18,0xff1b2947,true));gap(device,10);device.addView(homeText("设备名称",14,0xff263957,true));EditText name=new EditText(this);name.setSingleLine(true);name.setText(DeviceIdentity.name(this));name.setHint("输入附近设备显示的名称");device.addView(name);Button saveName=btn("保存设备名称",0xff2878f5);saveName.setOnClickListener(v->{String value=name.getText().toString().trim();if(value.length()<2||value.length()>32){Toast.makeText(this,"设备名称需为 2–32 个字符",Toast.LENGTH_SHORT).show();return;}getSharedPreferences("device_identity",MODE_PRIVATE).edit().putString("display_name",value).apply();Toast.makeText(this,"设备名称已保存",Toast.LENGTH_SHORT).show();});gap(device,8);device.addView(saveName);l.addView(device);gap(l,12);
+  LinearLayout device=homeCard();device.addView(homeText("设备",18,0xff1b2947,true));gap(device,10);device.addView(homeText("设备名称",14,0xff263957,true));EditText name=new EditText(this);name.setSingleLine(true);name.setText(DeviceIdentity.name(this));name.setHint("输入附近设备显示的名称");device.addView(name);Button saveName=btn("保存设备名称",0xff2878f5);saveName.setOnClickListener(v->{String value=name.getText().toString().trim();if(value.length()<2||value.length()>32){Toast.makeText(this,ui("设备名称需为 2–32 个字符"),Toast.LENGTH_SHORT).show();return;}getSharedPreferences("device_identity",MODE_PRIVATE).edit().putString("display_name",value).apply();Toast.makeText(this,"设备名称已保存",Toast.LENGTH_SHORT).show();});gap(device,8);device.addView(saveName);l.addView(device);gap(l,12);
   LinearLayout other=homeCard();other.addView(homeText("其他",18,0xff1b2947,true));gap(other,8);
   Button about=btn("关于页面",0xff31577f);about.setOnClickListener(v->infoPage("关于小李全联","小李全联是一款局域网文件传输工具。\n版本：1.0.1\n无广告，不上传文件内容。"));other.addView(about);gap(other,7);
   Button donate=btn("捐赠入口",0xff31577f);donate.setOnClickListener(v->infoPage("支持小李全联","感谢支持。当前版本尚未配置可验证的收款渠道，因此不会展示虚构的二维码或支付链接。"));other.addView(donate);gap(other,7);
   Button privacy=btn("隐私政策",0xff31577f);privacy.setOnClickListener(v->infoPage("隐私政策","文件仅在设备间通过局域网传输，不会上传到开发者服务器。设备发现使用局域网广播，传输连接使用应用内 TLS 身份验证。传输历史仅保存在本机，可在应用内清除。"));other.addView(privacy);gap(other,7);
   Button advanced=btn("高级设置",0xff31577f);advanced.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("高级设置").setItems(new String[]{ui("故障诊断与日志"),ui("手动连接设备"),ui("发送方式设置")},(d,w)->{if(w==0)diagnosticsPage();else if(w==1)manualConnect();else showSendOptions();}).show());other.addView(advanced);l.addView(other);gap(l,14);
-  Button save=btn("保存通用与接收设置",0xff2878f5);save.setOnClickListener(v->{String[] themes={"system","light","dark"},colors={"system","blue","green","purple","orange"},langs={"system","zh","en"};prefs.edit().putString("theme",themes[theme.getSelectedItemPosition()]).putString("accent",colors[color.getSelectedItemPosition()]).putString("language",langs[language.getSelectedItemPosition()]).putBoolean("english",language.getSelectedItemPosition()==2).putInt("font_scale",fontSize.getSelectedItemPosition()).putBoolean("animations_enabled",animations.isChecked()).putBoolean("auto_save",autoSave.isChecked()).putBoolean("save_to_album",album.isChecked()).putBoolean("auto_complete",autoComplete.isChecked()).putBoolean("save_history",history.isChecked()).apply();applyWindowTheme();Toast.makeText(this,"设置已保存",Toast.LENGTH_SHORT).show();settingsPage();});l.addView(save);installFlow(l,2);
+  Button save=btn("保存通用与接收设置",0xff2878f5);save.setOnClickListener(v->{String[] themes={"system","light","dark"},colors={"system","blue","green","purple","orange"},langs={"system","zh","en"};prefs.edit().putString("theme",themes[theme.getSelectedItemPosition()]).putString("accent",colors[color.getSelectedItemPosition()]).putString("language",langs[language.getSelectedItemPosition()]).putBoolean("english",language.getSelectedItemPosition()==2).putInt("font_scale",fontSize.getSelectedItemPosition()).putBoolean("animations_enabled",animations.isChecked()).putBoolean("auto_save",autoSave.isChecked()).putBoolean("save_to_album",album.isChecked()).putBoolean("auto_complete",autoComplete.isChecked()).putBoolean("save_history",history.isChecked()).apply();applyWindowTheme();Toast.makeText(this,ui("设置已保存"),Toast.LENGTH_SHORT).show();settingsPage();});l.addView(save);installFlow(l,2);
  }private void diagnosticsPage(){
   page=5;LinearLayout l=col();l.setBackgroundColor(pageBackground());lightHeader(l,"故障诊断与日志导出","连接失败后，发送端和接收端分别导出");
   l.addView(homeText("操作步骤",18,0xff1b2947,true));gap(l,8);l.addView(homeText("1. 两台手机都安装带有此功能的版本。\n2. 先分别打开本页面，确认旧日志已清空。\n3. 返回首页，重现一次发送失败。\n4. 两台手机分别回到本页面，点击“复制完整日志”或“分享日志”。\n5. 把两份日志都发给开发者。\n\n日志包含 TCP、TLS、证书校验、接收请求及异常堆栈，不记录文件内容。",14,0xff52627a,false));
@@ -697,7 +697,7 @@ public class MainActivity extends Activity {
   }
   private void showSendOptions(){
    String[] options={ui("单个接收者"),ui("多个接收者"),ui("通过连接分享")};
-   new AlertDialog.Builder(this).setTitle("发送方式").setItems(options,(dialog,which)->{
+   new AlertDialog.Builder(this).setTitle(ui("发送方式")).setItems(options,(dialog,which)->{
     if(which==0){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","single").apply();Toast.makeText(this,"已选择单个接收者，点击一个附近设备即可发送",Toast.LENGTH_SHORT).show();}
     else if(which==1){getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","multiple").apply();showMultipleReceiverSelection();}
     else{getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","connection").apply();manualConnect();}
@@ -715,7 +715,7 @@ public class MainActivity extends Activity {
    if(list.isEmpty()){Toast.makeText(this,"暂未发现附近设备",Toast.LENGTH_SHORT).show();return;}
    String[] labels=new String[list.size()];boolean[] checked=new boolean[list.size()];
    for(int i=0;i<list.size();i++)labels[i]=list.get(i).name;
-   new AlertDialog.Builder(this).setTitle("选择多个接收者").setMultiChoiceItems(labels,checked,(d,which,on)->checked[which]=on)
+   new AlertDialog.Builder(this).setTitle(ui("选择多个接收者")).setMultiChoiceItems(labels,checked,(d,which,on)->checked[which]=on)
     .setNegativeButton("取消",null).setPositiveButton("完成",(d,w)->{
      ArrayList<Device> selectedDevices=new ArrayList<>();ArrayList<String> selected=new ArrayList<>();
      for(int i=0;i<checked.length;i++)if(checked[i]){selected.add(list.get(i).key);selectedDevices.add(list.get(i));}
