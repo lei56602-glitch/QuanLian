@@ -189,7 +189,7 @@ public class TransferForegroundService extends Service {
                 updateStatus("已连接设备，正在等待对方确认…", 0);
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
                 DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-                out.writeUTF("QUANLIAN3"); out.writeUTF(deviceName()); out.writeInt(files.size());
+                out.writeUTF("QUANLIAN3"); out.writeUTF(deviceName()); out.writeUTF(DeviceIdentity.id(this)); out.writeInt(files.size());
                 for (SendFile file : files) { out.writeUTF(file.name); out.writeLong(file.size); out.writeUTF(file.hash); }
                 out.flush();
                 if (!in.readBoolean()) throw new IOException("对方拒绝接收或接收确认超时");
