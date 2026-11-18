@@ -16,7 +16,7 @@ public final class LanScanner {
         try {
             WifiManager wifi=(WifiManager)context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             if(wifi==null||wifi.getDhcpInfo()==null){status.accept("无法读取 Wi-Fi 子网信息");pool.shutdownNow();return;}
-            android.net.wifi.DhcpInfo dhcp=wifi.getDhcpInfo();
+            android.net.DhcpInfo dhcp=wifi.getDhcpInfo();
             int ip=dhcp.ipAddress, mask=dhcp.netmask;
             if(ip==0||mask==0){status.accept("当前网络不支持读取 IPv4 子网");pool.shutdownNow();return;}
             int network=ip&mask, broadcast=network|~mask;
