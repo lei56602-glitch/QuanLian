@@ -102,7 +102,7 @@ public class ReceiveForegroundService extends Service {
         acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
             String protocol=in.readUTF();if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
-            String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
+            String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
@@ -110,7 +110,7 @@ public class ReceiveForegroundService extends Service {
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);
             out.writeBoolean(accepted);out.flush();if(!accepted)return;
-            File dir=new File(getCacheDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
+            File dir=new File(getFilesDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
             byte[] buf=new byte[BUF];
             for(int x=0;x<count;x++){
                 StringBuilder clean=new StringBuilder();for(char ch:names.get(x).toCharArray())clean.append("\\\\/:*?\"<>|".indexOf(ch)>=0?"_":ch);String safe=clean.toString().trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+x;
@@ -118,7 +118,7 @@ public class ReceiveForegroundService extends Service {
                 MessageDigest digest=MessageDigest.getInstance("SHA-256");
                 long left=sizes.get(x);
                 if(resumable){
-                    tmp=new File(dir,".quanlian_"+hashes.get(x).toLowerCase(Locale.ROOT)+".part");
+                    tmp=new File(dir,".quanlian_"+Integer.toHexString(senderId.hashCode())+"_"+hashes.get(x).toLowerCase(Locale.ROOT)+".part");
                     if(tmp.exists()&&tmp.length()>left)tmp.delete();
                     long offset=tmp.exists()?tmp.length():0;
                     try(InputStream prior=new FileInputStream(tmp)){byte[] old=new byte[BUF];int n;while((n=prior.read(old))!=-1)digest.update(old,0,n);}catch(FileNotFoundException ignored){}
