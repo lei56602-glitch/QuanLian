@@ -17,7 +17,7 @@ public final class LanDiscovery {
     private static final String APP = "QUANLIAN";
     private static final int VERSION = 1;
     private static final int PORT = 38889;
-    private static final String GROUP = "239.255.77.77";
+    private static final String GROUP = "224.0.0.167";
     private LanDiscovery() {}
 
     public static final class Announcement {
@@ -81,7 +81,7 @@ public final class LanDiscovery {
 
     public static void announce(String name,int transferPort){
         if(name==null||name.isEmpty()||transferPort<1||transferPort>65535)return;
-        try(DatagramSocket socket=new DatagramSocket()){
+        try(MulticastSocket socket=new MulticastSocket()){
             socket.setTimeToLive(1);
             JSONObject json=new JSONObject();
             json.put("app",APP);json.put("v",VERSION);json.put("name",name);json.put("port",transferPort);
