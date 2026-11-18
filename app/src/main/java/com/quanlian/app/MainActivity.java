@@ -69,10 +69,10 @@ public class MainActivity extends Activity {
    if(!alive||announcement==null||announcement.host==null||announcement.port<1||myName().equals(announcement.name))return;
    runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到设备广播，正在验证加密身份…");});
    workers.execute(()->{
-    boolean verified=LanDiscovery.verify(announcement.host,announcement.port,announcement.fingerprint);
-    if(!verified){
-     android.util.Log.w("QuanLianDiscovery","广播已收到但 TLS 验证失败：host="+announcement.host.getHostAddress()+", port="+announcement.port);
-     runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到对方广播，但 TLS 身份验证失败；请检查双方版本和接收服务。");});
+    String verifyError=LanDiscovery.verifyDetailed(announcement.host,announcement.port,announcement.fingerprint);
+    if(verifyError!=null){
+     android.util.Log.e("QuanLianDiscovery","广播已收到但验证失败：host="+announcement.host.getHostAddress()+", port="+announcement.port+"；"+verifyError);
+     runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到对方广播，但连接验证失败："+verifyError);});
      return;
     }
     runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
