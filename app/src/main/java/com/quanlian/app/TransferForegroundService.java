@@ -205,9 +205,10 @@ public class TransferForegroundService extends Service {
                     try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(file.uri))) {
                         if(input==null)throw new IOException("无法重新读取文件："+file.name);
                         long skipped=0;while(skipped<offset){long n=input.skip(offset-skipped);if(n<=0){if(input.read()==-1)throw new EOFException("无法定位续传位置");n=1;}skipped+=n;}
-                        byte[] chunk=new byte[1024*1024];
+                        byte[] chunk=new byte[4*1024*1024];
                         long remainingFile=file.size-offset;
-                        final long ackWindow=8L*1024*1024;
+                        // Larger batches reduce per-frame and acknowledgement overhead on fast LAN links.
+                        final long ackWindow=16L*1024*1024;
                         while(remainingFile>0){
                             if(cancelRequested.get())throw new IOException("已取消发送");
                             long batchBytes=0;
