@@ -79,7 +79,7 @@ public class MainActivity extends Activity {
   restorePage();
  }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
- private void restorePage(){switch(page){case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;default:home();}}
+ private void restorePage(){switch(page){case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:home();}}
  @Override public void onConfigurationChanged(android.content.res.Configuration newConfig){super.onConfigurationChanged(newConfig);restorePage();}
  private void requestNotificationPermissionIfNeeded(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);}}
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_NOTIFICATIONS&&grantResults.length>0&&grantResults[0]!=android.content.pm.PackageManager.PERMISSION_GRANTED){Toast.makeText(this,"通知权限未开启，传输仍可尝试进行，但系统可能不会正常显示传输通知。",Toast.LENGTH_LONG).show();}}
@@ -231,13 +231,13 @@ public class MainActivity extends Activity {
   }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"接收失败："+e.getMessage(),Toast.LENGTH_LONG).show());}
  }
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
- private void send(Device d){
+ private void send(Device d){\n  DiagnosticLog.info(this,"SEND_SELECTED","peer="+d.name+", id="+d.key+", target="+d.host.getHostAddress()+":"+d.port+", fingerprint="+d.fingerprint);
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   if(d.fingerprint==null||!d.fingerprint.matches("(?i)[0-9a-f]{64}")){Toast.makeText(this,"设备没有有效的 TLS 身份证书，已阻止连接",Toast.LENGTH_LONG).show();return;}
   android.content.SharedPreferences trust=getSharedPreferences("trusted_device_pins",MODE_PRIVATE);
   String pinned=trust.getString(d.key,null);
   if(pinned!=null&&!pinned.equalsIgnoreCase(d.fingerprint)){new AlertDialog.Builder(this).setTitle("设备身份验证失败").setMessage("该设备的证书指纹与此前信任的身份不同。为防止设备冒充，已阻止发送。").setPositiveButton("知道了",null).show();return;}
-  if(pinned==null){new AlertDialog.Builder(this).setTitle("首次连接 · 确认设备身份").setMessage("请确认你信任这台接收设备。TLS 证书 SHA-256 指纹：\\n\\n"+d.fingerprint+"\\n\\n确认后会保存此设备身份，后续若证书变化将拒绝连接。").setNegativeButton("取消",null).setPositiveButton("信任并发送",(dialog,which)->{trust.edit().putString(d.key,d.fingerprint).apply();send(d);}).show();return;}
+  if(pinned==null){new AlertDialog.Builder(this).setTitle("首次连接 · 确认设备身份").setMessage("请确认你信任这台接收设备。TLS 证书 SHA-256 指纹：\\n\\n"+d.fingerprint+"\\n\\n确认后会保存此设备身份，后续若证书变化将拒绝连接。").setNegativeButton("取消",null).setPositiveButton("信任并发送",(dialog,which)->{DiagnosticLog.info(this,"USER_TRUST_CONFIRMED","peer="+d.name+", id="+d.key+", fingerprint="+d.fingerprint);trust.edit().putString(d.key,d.fingerprint).commit();send(d);}).show();return;}
   sendProgress=new ProgressDialog(this);sendProgress.setTitle("小李全联正在发送");sendProgress.setMessage("正在准备文件并计算校验值…");sendProgress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);sendProgress.setMax(1000);sendProgress.setProgress(0);
   sendProgress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->TransferForegroundService.cancelTransfer(this));
   sendProgress.setCancelable(false);sendProgress.show();
@@ -265,7 +265,7 @@ public class MainActivity extends Activity {
      unregisterSendReceiver();
      if(success){uris.clear();names.clear();sizes.clear();retryDevice=null;page=0;home();Toast.makeText(MainActivity.this,"发送成功："+target.name+"，已完成传输并清空待发送列表",Toast.LENGTH_LONG).show();}
      else if(cancelled)Toast.makeText(MainActivity.this,"已取消发送",Toast.LENGTH_SHORT).show();
-     else new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
+     else {DiagnosticLog.error(MainActivity.this,"SEND_RESULT_FAILED",new Exception(error==null?"传输中断":error));new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
     }
    }
   };
@@ -307,7 +307,7 @@ public class MainActivity extends Activity {
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
   l.addView(txt("小李全联",30,-1,true));TextView sub=txt("让所有设备，自由交换文件",14,0xffabc6e4,false);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.topMargin=dp(4);sp.bottomMargin=dp(22);l.addView(sub,sp);
   LinearLayout row=new LinearLayout(this);Button send=btn("↑  发送文件",0xff1f77dc),recv=btn("↓  接收文件",0xff1f9e8f);LinearLayout.LayoutParams a=new LinearLayout.LayoutParams(0,dp(62),1);a.rightMargin=dp(6);row.addView(send,a);LinearLayout.LayoutParams b=new LinearLayout.LayoutParams(0,dp(62),1);b.leftMargin=dp(6);row.addView(recv,b);l.addView(row);send.setOnClickListener(v->pick());recv.setOnClickListener(v->receivePage());
-  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);
+  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);\n  gap(l,10);Button diagnostics=btn("故障诊断与日志导出",0xff6a568f);diagnostics.setOnClickListener(v->diagnosticsPage());l.addView(diagnostics);
   if(BuildConfig.DEBUG){
    gap(l,10);Switch plainSwitch=new Switch(this);plainSwitch.setText("明文 TCP 诊断模式（不加密，仅测试）");plainSwitch.setTextColor(0xffffc66d);plainSwitch.setTextSize(13);
    plainSwitch.setChecked(TlsIdentity.plainMode(this));
@@ -322,7 +322,16 @@ public class MainActivity extends Activity {
   }
   gap(l,24);l.addView(txt("附近设备",20,-1,true));gap(l,8);deviceStatus=txt("正在搜索局域网设备…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();gap(l,24);TextView foot=txt("Wi-Fi 局域网直连优先 · 无广告 · 无强制账号",12,0xff96b1cf,false);foot.setGravity(Gravity.CENTER);l.addView(foot);install(l);
  }
- private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
+
+ private void diagnosticsPage(){
+  page=5;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"故障诊断与日志导出","连接失败后，发送端和接收端分别导出");
+  l.addView(txt("操作步骤",18,-1,true));gap(l,8);l.addView(txt("1. 两台手机都安装带有此功能的版本。\n2. 先分别打开本页面，确认旧日志已清空。\n3. 返回首页，重现一次发送失败。\n4. 两台手机分别回到本页面，点击“复制完整日志”或“分享日志”。\n5. 把两份日志都发给开发者。\n\n日志包含 TCP、TLS、证书校验、接收请求及异常堆栈，不记录文件内容。",14,0xffc4d5e8,false));
+  gap(l,16);Button copy=btn("复制完整日志",0xff1f77dc);copy.setOnClickListener(v->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("小李全联诊断日志",DiagnosticLog.read(this)));Toast.makeText(this,"日志已复制，可以直接粘贴发送",Toast.LENGTH_LONG).show();});l.addView(copy);
+  gap(l,8);Button share=btn("分享 / 导出日志",0xff1f9e8f);share.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");i.putExtra(Intent.EXTRA_SUBJECT,"小李全联故障诊断日志");i.putExtra(Intent.EXTRA_TEXT,DiagnosticLog.read(this));startActivity(Intent.createChooser(i,"导出诊断日志"));});l.addView(share);
+  gap(l,8);Button clear=btn("清空旧日志",0xff304b70);clear.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("清空诊断日志").setMessage("清空后再重现一次故障，便于准确定位。").setNegativeButton("取消",null).setPositiveButton("清空",(d,w)->{DiagnosticLog.clear(this);Toast.makeText(this,"旧日志已清空",Toast.LENGTH_SHORT).show();diagnosticsPage();}).show());l.addView(clear);
+  gap(l,12);l.addView(txt("注意：两台手机都要导出。只有发送端日志，无法完整判断接收端是否收到连接。",12,0xffffc66d,false));install(l);
+ }
+\n private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
  @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(r!=PICK||c!=RESULT_OK||d==null)return;uris.clear();names.clear();sizes.clear();if(d.getClipData()!=null){for(int i=0;i<d.getClipData().getItemCount();i++)addFile(d.getClipData().getItemAt(i).getUri());}else if(d.getData()!=null)addFile(d.getData());selectedPage();}
  private void addFile(Uri u){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}String n="文件";long z=-1;try(Cursor c=getContentResolver().query(u,null,null,null,null)){if(c!=null&&c.moveToFirst()){int ni=c.getColumnIndex(OpenableColumns.DISPLAY_NAME),si=c.getColumnIndex(OpenableColumns.SIZE);if(ni>=0)n=c.getString(ni);if(si>=0&&!c.isNull(si))z=c.getLong(si);}}catch(Exception ignored){}uris.add(u);names.add(n);sizes.add(z);}
  private String sizeText(long n){if(n<0)return "大小未知";if(n<1024)return n+" B";if(n<1048576)return String.format(Locale.getDefault(),"%.1f KB",n/1024d);if(n<1073741824)return String.format(Locale.getDefault(),"%.1f MB",n/1048576d);return String.format(Locale.getDefault(),"%.2f GB",n/1073741824d);}

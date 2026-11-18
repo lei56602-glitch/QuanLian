@@ -182,7 +182,7 @@ public class TransferForegroundService extends Service {
                 files.add(new SendFile(uris.get(i),names.get(i),length,hex(digest.digest())));
             }
             if (cancelRequested.get()) throw new IOException("已取消发送");
-            updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
+            DiagnosticLog.info(this,"SEND_CONNECT_BEGIN","peer="+peer+", host="+host+", port="+port+", fingerprint="+fingerprint+", files="+files.size());\n            updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
             try (Socket socket = TlsIdentity.connect(this,host,port,fingerprint)) {
                 activeSocket.set(socket);
                 socket.setSoTimeout(180000); socket.setTcpNoDelay(true); socket.setKeepAlive(true);
@@ -227,12 +227,12 @@ public class TransferForegroundService extends Service {
             for (int i=0;i<files.size();i++) addHistory("发送",files.get(i).name,files.get(i).size,peer,uris.get(i).toString());
         } catch (Exception e) {
             cancelled = cancelRequested.get();
-            failure = e.getMessage()==null ? "传输中断" : e.getMessage();
+            failure = e.getMessage()==null ? "传输中断" : e.getMessage();\n            DiagnosticLog.error(this,"SEND_EXCEPTION",e);
         } finally {
             activeSocket.set(null);
             transferRunning.set(false);
             releaseWakeLock();
-            publishResult(failure==null, cancelled, failure);
+            DiagnosticLog.info(this,"SEND_FINISHED","success="+(failure==null)+", cancelled="+cancelled+", error="+failure);\n            publishResult(failure==null, cancelled, failure);
             mainHandler.post(() -> { stopForeground(true); stopSelf(startId); });
         }
     }

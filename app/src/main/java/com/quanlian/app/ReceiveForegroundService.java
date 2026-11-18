@@ -76,7 +76,7 @@ public class ReceiveForegroundService extends Service {
         try{
             server=TlsIdentity.serverSocket(this,DEFAULT_PORT);
             int port=server.getLocalPort();
-            android.util.Log.i("QuanLianReceive","LISTENER_READY mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")
+            DiagnosticLog.info(this,"LISTENER_READY","mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")+", bind="+server.getInetAddress().getHostAddress()+":"+port+", deviceId="+DeviceIdentity.id(this));\n            android.util.Log.i("QuanLianReceive","LISTENER_READY mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")
                 +", bind="+server.getInetAddress().getHostAddress()+":"+port
                 +", reuseAddress="+server.getReuseAddress()+", deviceId="+DeviceIdentity.id(this));
             publish(port);startUdpAnnouncing(port);
@@ -84,13 +84,13 @@ public class ReceiveForegroundService extends Service {
             while(running){
                 long acceptStarted=android.os.SystemClock.elapsedRealtime();
                 Socket s=server.accept();
-                android.util.Log.i("QuanLianReceive","TCP_ACCEPTED local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()
+                DiagnosticLog.info(this,"TCP_ACCEPTED","local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()+", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort());\n                android.util.Log.i("QuanLianReceive","TCP_ACCEPTED local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()
                     +", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
                     +", acceptWaitMs="+(android.os.SystemClock.elapsedRealtime()-acceptStarted)
                     +", mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"));
                 s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);
                 clients.execute(()->{try{receive(s);}catch(Exception e){
-                    android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
+                    DiagnosticLog.error(this,"RECEIVE_SESSION_FAILED",e);\n                    android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
                         +", exception="+e.getClass().getName()+": "+e.getMessage(),e);
                     broadcastStatus("连接会话失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());
                 }finally{activeSockets.remove(s);}});
@@ -121,14 +121,14 @@ public class ReceiveForegroundService extends Service {
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
             if(s instanceof javax.net.ssl.SSLSocket){
                 try{((javax.net.ssl.SSLSocket)s).startHandshake();android.util.Log.i("QuanLianTLS","Server-side handshake success peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+", protocol="+((javax.net.ssl.SSLSocket)s).getSession().getProtocol()+", cipher="+((javax.net.ssl.SSLSocket)s).getSession().getCipherSuite());}
-                catch(Exception handshake){android.util.Log.e("QuanLianTLS","Server-side TLS handshake failed peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+"; "+handshake.getClass().getName()+": "+handshake.getMessage(),handshake);throw handshake;}
+                catch(Exception handshake){DiagnosticLog.error(this,"SERVER_TLS_HANDSHAKE_FAILED",handshake);android.util.Log.e("QuanLianTLS","Server-side TLS handshake failed peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+"; "+handshake.getClass().getName()+": "+handshake.getMessage(),handshake);throw handshake;}
             }else android.util.Log.w("QuanLianPlain","Accepted plain TCP session peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+" WITHOUT ENCRYPTION");
-            String protocol=in.readUTF();android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
+            String protocol=in.readUTF();DiagnosticLog.info(this,"APPLICATION_PROTOCOL_RECEIVED","protocol="+protocol+", peer="+socket.getInetAddress().getHostAddress());android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
-            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
+            DiagnosticLog.info(this,"INCOMING_REQUEST_READY","sender="+sender+", files="+count+", bytes="+total);\n            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);
@@ -161,7 +161,7 @@ public class ReceiveForegroundService extends Service {
                 addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
-        }catch(Exception e){android.util.Log.e("QuanLianReceive","接收会话处理失败 mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"),e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
+        }catch(Exception e){DiagnosticLog.error(this,"RECEIVE_PROCESSING_FAILED",e);android.util.Log.e("QuanLianReceive","接收会话处理失败 mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"),e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
         finally{releaseReceiveWakeLock();}
     }
     private int port(){return server==null?-1:server.getLocalPort();}
