@@ -73,7 +73,7 @@ public class ReceiveForegroundService extends Service {
     }
     private void listen(){
         try{
-            server=new ServerSocket();server.setReuseAddress(true);try{server.bind(new InetSocketAddress("0.0.0.0",38890));}catch(BindException occupied){server.bind(new InetSocketAddress("0.0.0.0",0));}
+            try{server=TlsIdentity.serverSocket(38890);}catch(BindException occupied){server=TlsIdentity.serverSocket(0);}
             int port=server.getLocalPort();publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
             while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
@@ -83,7 +83,7 @@ public class ReceiveForegroundService extends Service {
         udpAnnouncing=true;
         udpAnnounceThread=new Thread(()->{
             while(running&&udpAnnouncing){
-                LanDiscovery.announce(DeviceIdentity.id(this),deviceName(),port);
+                LanDiscovery.announce(DeviceIdentity.id(this),deviceName(),port,TlsIdentity.fingerprint());
                 try{Thread.sleep(2000);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
             }
         },"QuanLian-UDP-Announcer");
@@ -93,7 +93,7 @@ public class ReceiveForegroundService extends Service {
 
     private String deviceName(){return DeviceIdentity.name(this);}
     private void publish(int port){
-        try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));
+        try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));info.setAttribute("fp",TlsIdentity.fingerprint());
             registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){broadcastStatus("局域网设备广播已启动："+s.getServiceName(),port());}public void onRegistrationFailed(NsdServiceInfo s,int e){broadcastStatus("设备广播失败（"+e+"），正在重试",-1);main.postDelayed(()->{if(running)publish(port());},2500);}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
             nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);
         }catch(Exception e){broadcastStatus("设备广播启动失败",-1);}
