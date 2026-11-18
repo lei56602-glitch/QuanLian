@@ -61,3 +61,4 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 # Trigger signed release build after repository signing secrets setup.
+# Build includes the complete secure LAN discovery stack.
