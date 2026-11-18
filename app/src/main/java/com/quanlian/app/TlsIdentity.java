@@ -30,7 +30,7 @@ public final class TlsIdentity {
         return ks;
     }
     public static String fingerprint() throws Exception {
-        Certificate cert=keyStore().getCertificate(ALIAS);
+        java.security.cert.Certificate cert=keyStore().getCertificate(ALIAS);
         if(cert==null)throw new GeneralSecurityException("TLS device certificate unavailable");
         return hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
     }
@@ -70,7 +70,7 @@ public final class TlsIdentity {
         SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
         try(SSLSocket socket=(SSLSocket)ctx.getSocketFactory().createSocket()){
             socket.connect(new InetSocketAddress(host,port),3000);socket.setSoTimeout(3000);enableModern(socket);socket.startHandshake();
-            Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
+            java.security.cert.Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
         }
     }
     private static void enableModern(SSLSocket s){ArrayList<String> p=new ArrayList<>();for(String v:s.getSupportedProtocols())if(v.equals("TLSv1.3")||v.equals("TLSv1.2"))p.add(v);s.setEnabledProtocols(p.toArray(new String[0]));}
