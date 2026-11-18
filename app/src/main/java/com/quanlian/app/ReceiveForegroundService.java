@@ -76,7 +76,8 @@ public class ReceiveForegroundService extends Service {
         try{
             server=TlsIdentity.serverSocket(this,DEFAULT_PORT);
             int port=server.getLocalPort();
-            DiagnosticLog.info(this,"LISTENER_READY","mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")+", bind="+server.getInetAddress().getHostAddress()+":"+port+", deviceId="+DeviceIdentity.id(this));\n            android.util.Log.i("QuanLianReceive","LISTENER_READY mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")
+            DiagnosticLog.info(this,"LISTENER_READY","mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")+", bind="+server.getInetAddress().getHostAddress()+":"+port+", deviceId="+DeviceIdentity.id(this) );
+            android.util.Log.i("QuanLianReceive","LISTENER_READY mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")
                 +", bind="+server.getInetAddress().getHostAddress()+":"+port
                 +", reuseAddress="+server.getReuseAddress()+", deviceId="+DeviceIdentity.id(this));
             publish(port);startUdpAnnouncing(port);
@@ -84,13 +85,15 @@ public class ReceiveForegroundService extends Service {
             while(running){
                 long acceptStarted=android.os.SystemClock.elapsedRealtime();
                 Socket s=server.accept();
-                DiagnosticLog.info(this,"TCP_ACCEPTED","local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()+", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort());\n                android.util.Log.i("QuanLianReceive","TCP_ACCEPTED local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()
+                DiagnosticLog.info(this,"TCP_ACCEPTED","local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()+", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort() );
+                android.util.Log.i("QuanLianReceive","TCP_ACCEPTED local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()
                     +", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
                     +", acceptWaitMs="+(android.os.SystemClock.elapsedRealtime()-acceptStarted)
                     +", mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"));
                 s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);
                 clients.execute(()->{try{receive(s);}catch(Exception e){
-                    DiagnosticLog.error(this,"RECEIVE_SESSION_FAILED",e);\n                    android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
+                    DiagnosticLog.error(this,"RECEIVE_SESSION_FAILED",e);
+                    android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
                         +", exception="+e.getClass().getName()+": "+e.getMessage(),e);
                     broadcastStatus("连接会话失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());
                 }finally{activeSockets.remove(s);}});
@@ -128,7 +131,8 @@ public class ReceiveForegroundService extends Service {
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
-            DiagnosticLog.info(this,"INCOMING_REQUEST_READY","sender="+sender+", files="+count+", bytes="+total);\n            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
+            DiagnosticLog.info(this,"INCOMING_REQUEST_READY","sender="+sender+", files="+count+", bytes="+total );
+            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);

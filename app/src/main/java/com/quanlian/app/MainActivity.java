@@ -231,7 +231,8 @@ public class MainActivity extends Activity {
   }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"接收失败："+e.getMessage(),Toast.LENGTH_LONG).show());}
  }
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
- private void send(Device d){\n  DiagnosticLog.info(this,"SEND_SELECTED","peer="+d.name+", id="+d.key+", target="+d.host.getHostAddress()+":"+d.port+", fingerprint="+d.fingerprint);
+ private void send(Device d){
+  DiagnosticLog.info(this,"SEND_SELECTED","peer="+d.name+", id="+d.key+", target="+d.host.getHostAddress()+":"+d.port+", fingerprint="+d.fingerprint);
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   if(d.fingerprint==null||!d.fingerprint.matches("(?i)[0-9a-f]{64}")){Toast.makeText(this,"设备没有有效的 TLS 身份证书，已阻止连接",Toast.LENGTH_LONG).show();return;}
   android.content.SharedPreferences trust=getSharedPreferences("trusted_device_pins",MODE_PRIVATE);
@@ -307,7 +308,8 @@ public class MainActivity extends Activity {
   page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
   l.addView(txt("小李全联",30,-1,true));TextView sub=txt("让所有设备，自由交换文件",14,0xffabc6e4,false);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.topMargin=dp(4);sp.bottomMargin=dp(22);l.addView(sub,sp);
   LinearLayout row=new LinearLayout(this);Button send=btn("↑  发送文件",0xff1f77dc),recv=btn("↓  接收文件",0xff1f9e8f);LinearLayout.LayoutParams a=new LinearLayout.LayoutParams(0,dp(62),1);a.rightMargin=dp(6);row.addView(send,a);LinearLayout.LayoutParams b=new LinearLayout.LayoutParams(0,dp(62),1);b.leftMargin=dp(6);row.addView(recv,b);l.addView(row);send.setOnClickListener(v->pick());recv.setOnClickListener(v->receivePage());
-  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);\n  gap(l,10);Button diagnostics=btn("故障诊断与日志导出",0xff6a568f);diagnostics.setOnClickListener(v->diagnosticsPage());l.addView(diagnostics);
+  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);
+  gap(l,10);Button diagnostics=btn("故障诊断与日志导出",0xff6a568f);diagnostics.setOnClickListener(v->diagnosticsPage());l.addView(diagnostics);
   if(BuildConfig.DEBUG){
    gap(l,10);Switch plainSwitch=new Switch(this);plainSwitch.setText("明文 TCP 诊断模式（不加密，仅测试）");plainSwitch.setTextColor(0xffffc66d);plainSwitch.setTextSize(13);
    plainSwitch.setChecked(TlsIdentity.plainMode(this));
@@ -331,7 +333,8 @@ public class MainActivity extends Activity {
   gap(l,8);Button clear=btn("清空旧日志",0xff304b70);clear.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("清空诊断日志").setMessage("清空后再重现一次故障，便于准确定位。").setNegativeButton("取消",null).setPositiveButton("清空",(d,w)->{DiagnosticLog.clear(this);Toast.makeText(this,"旧日志已清空",Toast.LENGTH_SHORT).show();diagnosticsPage();}).show());l.addView(clear);
   gap(l,12);l.addView(txt("注意：两台手机都要导出。只有发送端日志，无法完整判断接收端是否收到连接。",12,0xffffc66d,false));install(l);
  }
-\n private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
+
+ private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);startActivityForResult(i,PICK);}
  @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(r!=PICK||c!=RESULT_OK||d==null)return;uris.clear();names.clear();sizes.clear();if(d.getClipData()!=null){for(int i=0;i<d.getClipData().getItemCount();i++)addFile(d.getClipData().getItemAt(i).getUri());}else if(d.getData()!=null)addFile(d.getData());selectedPage();}
  private void addFile(Uri u){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}String n="文件";long z=-1;try(Cursor c=getContentResolver().query(u,null,null,null,null)){if(c!=null&&c.moveToFirst()){int ni=c.getColumnIndex(OpenableColumns.DISPLAY_NAME),si=c.getColumnIndex(OpenableColumns.SIZE);if(ni>=0)n=c.getString(ni);if(si>=0&&!c.isNull(si))z=c.getLong(si);}}catch(Exception ignored){}uris.add(u);names.add(n);sizes.add(z);}
  private String sizeText(long n){if(n<0)return "大小未知";if(n<1024)return n+" B";if(n<1048576)return String.format(Locale.getDefault(),"%.1f KB",n/1024d);if(n<1073741824)return String.format(Locale.getDefault(),"%.1f MB",n/1048576d);return String.format(Locale.getDefault(),"%.2f GB",n/1073741824d);}

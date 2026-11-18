@@ -208,7 +208,8 @@ public final class TlsIdentity {
         InetAddress peer=InetAddress.getByName(host);
         final long connectStarted=android.os.SystemClock.elapsedRealtime();
         String stage="DNS_RESOLVED";
-        DiagnosticLog.info(context,"TCP_CONNECT_BEGIN","target="+peer.getHostAddress()+":"+port+", host="+host+", plain="+plainMode(context));\n        android.util.Log.i("QuanLianSocket","CONNECT_BEGIN target="+peer.getHostAddress()+":"+port
+        DiagnosticLog.info(context,"TCP_CONNECT_BEGIN","target="+peer.getHostAddress()+":"+port+", host="+host+", plain="+plainMode(context));
+        android.util.Log.i("QuanLianSocket","CONNECT_BEGIN target="+peer.getHostAddress()+":"+port
             +", hostname="+host+", plain="+plainMode(context)+", androidApi="+android.os.Build.VERSION.SDK_INT);
         if(plainMode(context)){
             Socket plain=new Socket();
@@ -232,7 +233,8 @@ public final class TlsIdentity {
             android.util.Log.i("QuanLianSocket","TCP_CONNECT_BEGIN target="+peer.getHostAddress()+":"+port);
             stage="TCP_CONNECT";
             socket.connect(new InetSocketAddress(peer,port),8000);
-            DiagnosticLog.info(context,"TCP_CONNECTED","mode=TLS target="+peer.getHostAddress()+":"+port+", local="+socket.getLocalAddress().getHostAddress()+":"+socket.getLocalPort());\n            android.util.Log.i("QuanLianSocket","TCP_CONNECTED mode=TLS target="+peer.getHostAddress()+":"+port
+            DiagnosticLog.info(context,"TCP_CONNECTED","mode=TLS target="+peer.getHostAddress()+":"+port+", local="+socket.getLocalAddress().getHostAddress()+":"+socket.getLocalPort());
+            android.util.Log.i("QuanLianSocket","TCP_CONNECTED mode=TLS target="+peer.getHostAddress()+":"+port
                 +", local="+socket.getLocalAddress().getHostAddress()+":"+socket.getLocalPort()
                 +", elapsedMs="+(android.os.SystemClock.elapsedRealtime()-connectStarted)
                 +", SSLContext="+sslContext.getProtocol());
@@ -241,11 +243,14 @@ public final class TlsIdentity {
             android.util.Log.i("QuanLianTLS","TLS_HANDSHAKE_BEGIN target="+peer.getHostAddress()+":"+port
                 +", enabledProtocols="+Arrays.toString(socket.getEnabledProtocols()));
             stage="TLS_HANDSHAKE";
-            DiagnosticLog.info(context,"TLS_HANDSHAKE_BEGIN","target="+peer.getHostAddress()+":"+port+", protocols="+Arrays.toString(socket.getEnabledProtocols()));\n            socket.startHandshake();
-            DiagnosticLog.info(context,"TLS_HANDSHAKE_SUCCESS","target="+peer.getHostAddress()+":"+port+", protocol="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());\n            android.util.Log.i("QuanLianTLS","Handshake success; target="+peer.getHostAddress()+":"+port+", negotiated="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());
+            DiagnosticLog.info(context,"TLS_HANDSHAKE_BEGIN","target="+peer.getHostAddress()+":"+port+", protocols="+Arrays.toString(socket.getEnabledProtocols()));
+            socket.startHandshake();
+            DiagnosticLog.info(context,"TLS_HANDSHAKE_SUCCESS","target="+peer.getHostAddress()+":"+port+", protocol="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());
+            android.util.Log.i("QuanLianTLS","Handshake success; target="+peer.getHostAddress()+":"+port+", negotiated="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());
             return socket;
         }catch(Exception e){
-            DiagnosticLog.error(context,"CONNECT_FAILED stage="+stage+" target="+peer.getHostAddress()+":"+port,e);\n            android.util.Log.e("QuanLianSocket","CONNECT_FAILED stage="+stage+", target="+peer.getHostAddress()+":"+port
+            DiagnosticLog.error(context,"CONNECT_FAILED stage="+stage+" target="+peer.getHostAddress()+":"+port,e);
+            android.util.Log.e("QuanLianSocket","CONNECT_FAILED stage="+stage+", target="+peer.getHostAddress()+":"+port
                 +", elapsedMs="+(android.os.SystemClock.elapsedRealtime()-connectStarted)
                 +", local="+(socket.getLocalAddress()==null?"unbound":socket.getLocalAddress().getHostAddress())
                 +", SSLContext="+sslContext.getProtocol()+", exception="+e.getClass().getName()+": "+e.getMessage(),e);
