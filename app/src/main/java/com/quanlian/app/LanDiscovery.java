@@ -2,30 +2,29 @@ package com.quanlian.app;
 
 import android.util.Log;
 import org.json.JSONObject;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
-import java.net.SocketTimeoutException;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.io.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-/** App-specific UDP discovery supplement. QUANLIAN2 remains the transfer protocol. */
+/** App-specific UDP multicast discovery supplement. QUANLIAN2 remains the transfer protocol. */
 public final class LanDiscovery {
     private static final String TAG = "QuanLianDiscovery";
     private static final String APP = "QUANLIAN";
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final int PORT = 38889;
     private static final String GROUP = "224.0.0.167";
+    public static final String PROBE = "QUANLIAN_DISCOVERY_PROBE";
+    public static final String PROBE_OK = "QUANLIAN_DISCOVERY_OK";
     private LanDiscovery() {}
 
     public static final class Announcement {
-        public final String name;
+        public final String id, name;
         public final InetAddress host;
         public final int port;
-        Announcement(String name, InetAddress host, int port) {
-            this.name=name; this.host=host; this.port=port;
+        Announcement(String id, String name, InetAddress host, int port) {
+            this.id=id; this.name=name; this.host=host; this.port=port;
         }
     }
 
@@ -43,10 +42,10 @@ public final class LanDiscovery {
                         socket.receive(packet);
                         JSONObject json=new JSONObject(new String(packet.getData(),packet.getOffset(),packet.getLength(),StandardCharsets.UTF_8));
                         if(!APP.equals(json.optString("app"))||json.optInt("v")!=VERSION)continue;
-                        String name=json.optString("name","");
+                        String id=json.optString("id",""), name=json.optString("name","");
                         int transferPort=json.optInt("port",-1);
-                        if(name.isEmpty()||name.length()>128||transferPort<1||transferPort>65535)continue;
-                        callback.accept(new Announcement(name,packet.getAddress(),transferPort));
+                        if(id.length()<8||id.length()>128||name.isEmpty()||name.length()>128||transferPort<1||transferPort>65535)continue;
+                        callback.accept(new Announcement(id,name,packet.getAddress(),transferPort));
                     }catch(SocketTimeoutException ignored){
                     }catch(Exception e){
                         if(running.get())Log.w(TAG,"UDP discovery receive error",e);
@@ -69,7 +68,7 @@ public final class LanDiscovery {
         try{
             MulticastSocket socket=new MulticastSocket(null);
             socket.setReuseAddress(true);
-            socket.bind(new java.net.InetSocketAddress(PORT));
+            socket.bind(new InetSocketAddress(PORT));
             socket.setSoTimeout(1500);
             socket.joinGroup(InetAddress.getByName(GROUP));
             return new Listener(socket,callback);
@@ -79,12 +78,24 @@ public final class LanDiscovery {
         }
     }
 
-    public static void announce(String name,int transferPort){
-        if(name==null||name.isEmpty()||transferPort<1||transferPort>65535)return;
+    public static boolean verify(InetAddress host,int port){
+        if(host==null||port<1||port>65535)return false;
+        try(Socket socket=new Socket()){
+            socket.connect(new InetSocketAddress(host,port),1400);
+            socket.setSoTimeout(1400);
+            DataOutputStream out=new DataOutputStream(socket.getOutputStream());
+            DataInputStream in=new DataInputStream(socket.getInputStream());
+            out.writeUTF(PROBE);out.flush();
+            return PROBE_OK.equals(in.readUTF());
+        }catch(Exception e){return false;}
+    }
+
+    public static void announce(String id,String name,int transferPort){
+        if(id==null||id.length()<8||name==null||name.isEmpty()||transferPort<1||transferPort>65535)return;
         try(MulticastSocket socket=new MulticastSocket()){
             socket.setTimeToLive(1);
             JSONObject json=new JSONObject();
-            json.put("app",APP);json.put("v",VERSION);json.put("name",name);json.put("port",transferPort);
+            json.put("app",APP);json.put("v",VERSION);json.put("id",id);json.put("name",name);json.put("port",transferPort);
             byte[] data=json.toString().getBytes(StandardCharsets.UTF_8);
             DatagramPacket packet=new DatagramPacket(data,data.length,InetAddress.getByName(GROUP),PORT);
             socket.send(packet);
