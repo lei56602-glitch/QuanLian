@@ -88,8 +88,8 @@ public final class LanDiscovery {
  public static String verifyDetailed(Context context,InetAddress host,int port,String fingerprint){
   if(host==null)return "对方 IP 地址为空";
   if(port<1||port>65535)return "对方公布的 TCP 端口无效："+port;
-  if(fingerprint==null||!fingerprint.matches("(?i)[0-9a-f]{64}"))return "广播中的证书指纹格式无效";
-  try(javax.net.ssl.SSLSocket s=TlsIdentity.connect(context,host.getHostAddress(),port,fingerprint)){
+  if(!TlsIdentity.plainMode(context)&&(fingerprint==null||!fingerprint.matches("(?i)[0-9a-f]{64}")))return "广播中的证书指纹格式无效";
+  try(Socket s=TlsIdentity.connect(context,host.getHostAddress(),port,fingerprint)){
    try{
     DataOutputStream out=new DataOutputStream(s.getOutputStream());DataInputStream in=new DataInputStream(s.getInputStream());
     out.writeUTF(PROBE);out.flush();
