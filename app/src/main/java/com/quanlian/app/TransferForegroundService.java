@@ -61,7 +61,7 @@ public class TransferForegroundService extends Service {
         else context.startService(intent);
     }
 
-    public static void sendFiles(Context context, ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer) {
+    public static void sendFiles(Context context, ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, String fingerprint) {
         Intent intent = new Intent(context, TransferForegroundService.class);
         intent.setAction(ACTION_SEND);
         intent.putParcelableArrayListExtra("uris", uris);
@@ -69,6 +69,7 @@ public class TransferForegroundService extends Service {
         intent.putExtra("host", host);
         intent.putExtra("port", port);
         intent.putExtra("peer", peer);
+        intent.putExtra("fingerprint", fingerprint);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
         else context.startService(intent);
     }
@@ -143,7 +144,8 @@ public class TransferForegroundService extends Service {
                 final String host = intent.getStringExtra("host");
                 final int port = intent.getIntExtra("port", -1);
                 final String peer = intent.getStringExtra("peer");
-                transferExecutor.execute(() -> executeSend(uris, names, host, port, peer, startId));
+                final String fingerprint = intent.getStringExtra("fingerprint");
+                transferExecutor.execute(() -> executeSend(uris, names, host, port, peer, fingerprint, startId));
             }
         }
         return START_NOT_STICKY;
@@ -154,7 +156,7 @@ public class TransferForegroundService extends Service {
         SendFile(File file, String name, long size, String hash) { this.file=file; this.name=name; this.size=size; this.hash=hash; }
     }
 
-    private void executeSend(ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, int startId) {
+    private void executeSend(ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, String fingerprint, int startId) {
         ArrayList<File> tempFiles = new ArrayList<>();
         boolean cancelled = false;
         String failure = null;
@@ -186,9 +188,8 @@ public class TransferForegroundService extends Service {
             }
             if (cancelRequested.get()) throw new IOException("已取消发送");
             updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
-            try (Socket socket = new Socket()) {
+            try (javax.net.ssl.SSLSocket socket = TlsIdentity.connect(host,port,fingerprint)) {
                 activeSocket.set(socket);
-                socket.connect(new InetSocketAddress(InetAddress.getByName(host),port),15000);
                 socket.setSoTimeout(180000); socket.setTcpNoDelay(true); socket.setKeepAlive(true);
                 updateStatus("已连接设备，正在等待对方确认…", 0);
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
@@ -251,13 +252,7 @@ public class TransferForegroundService extends Service {
         sendBroadcast(event);
     }
 
-    private String deviceName() {
-        String model=Build.MODEL;
-        if(model==null||model.trim().isEmpty()) model="Android";
-        String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);
-        if(id==null||id.length()<6) id=UUID.randomUUID().toString().replace("-","");
-        return "小李全联-" + model.replaceAll("[^\\p{L}\\p{N}_-]","") + "-" + id.substring(id.length()-6);
-    }
+    private String deviceName() { return DeviceIdentity.name(this); }
 
     private String sizeText(long value) {
         if(value<1024) return value+" B";
