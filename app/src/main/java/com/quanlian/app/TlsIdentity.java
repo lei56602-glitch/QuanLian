@@ -22,6 +22,10 @@ public final class TlsIdentity {
     public static final String PREFS="quanlian_diagnostics";
     public static final String KEY_PLAIN="plain_mode";
     public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
+    public static String plainFingerprint(){return String.join("",Collections.nCopies(64,"0"));}
+    public static final String PREFS="quanlian_diagnostics";
+    public static final String KEY_PLAIN="plain_mode";
+    public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
     public static String plainFingerprint(){return "0".repeat(64);}
     private TlsIdentity(){}
     private static synchronized KeyStore keyStore() throws Exception {
@@ -153,9 +157,23 @@ public final class TlsIdentity {
                 }
             };
         }
-        SSLSocket socket=(SSLSocket)context(selectedTrust).getSocketFactory().createSocket();
-        try{InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),8000);socket.setSoTimeout(12000);enableModern(socket);socket.startHandshake();android.util.Log.i("QuanLianTLS","TLS connected to "+peer.getHostAddress()+":"+port+"; protocol="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite()+", local="+socket.getLocalAddress().getHostAddress());return socket;}
-        catch(Exception e){try{socket.close();}catch(Exception ignored){}throw e;}
+        SSLContext sslContext=context(selectedTrust);
+        SSLSocket socket=(SSLSocket)sslContext.getSocketFactory().createSocket();
+        try{
+            android.util.Log.d("QuanLianSocket","TLS socket created; target="+peer.getHostAddress()+":"+port);
+            bindToPeerNetwork(context,socket,peer);
+            android.util.Log.d("QuanLianSocket","TCP connect starting; target="+peer.getHostAddress()+":"+port);
+            socket.connect(new InetSocketAddress(peer,port),8000);
+            android.util.Log.d("QuanLianSocket","TCP connected; target="+peer.getHostAddress()+":"+port+", local="+socket.getLocalAddress().getHostAddress()+", SSLContext="+sslContext.getProtocol());
+            socket.setSoTimeout(12000);enableModern(socket);
+            android.util.Log.d("QuanLianTLS","Handshake starting; target="+peer.getHostAddress()+":"+port+", enabledProtocols="+Arrays.toString(socket.getEnabledProtocols()));
+            socket.startHandshake();
+            android.util.Log.i("QuanLianTLS","Handshake success; target="+peer.getHostAddress()+":"+port+", negotiated="+socket.getSession().getProtocol()+", cipher="+socket.getSession().getCipherSuite());
+            return socket;
+        }catch(Exception e){
+            android.util.Log.e("QuanLianTLS","TCP/TLS failure; target="+peer.getHostAddress()+":"+port+", SSLContext="+sslContext.getProtocol()+", exception="+e.getClass().getName()+": "+e.getMessage(),e);
+            try{socket.close();}catch(Exception ignored){}throw e;
+        }
     }
     /** Used only for first-use enrollment; caller must present the fingerprint and obtain user approval. */
     public static String inspectFingerprint(Context context,String host,int port) throws Exception {
