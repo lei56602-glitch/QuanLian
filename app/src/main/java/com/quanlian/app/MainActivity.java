@@ -143,10 +143,18 @@ public class MainActivity extends Activity {
    }else if(ReceiveForegroundService.ACTION_INCOMING.equals(i.getAction())){
     String id=i.getStringExtra(ReceiveForegroundService.EXTRA_ID),sender=i.getStringExtra(ReceiveForegroundService.EXTRA_SENDER);
     int count=i.getIntExtra(ReceiveForegroundService.EXTRA_COUNT,0);long total=i.getLongExtra(ReceiveForegroundService.EXTRA_TOTAL,0);
-    new AlertDialog.Builder(MainActivity.this).setTitle("接收文件请求").setMessage("发送方："+sender+"\n文件总数："+count)
+    AlertDialog receiveDialog=new AlertDialog.Builder(MainActivity.this).setTitle("接收文件请求")
+     .setMessage("发送方："+(sender==null?"附近设备":sender)+"\n文件总数："+count+" 个\n文件总大小："+sizeText(total))
      .setPositiveButton("接受",(d,w)->ReceiveForegroundService.decide(MainActivity.this,id,true))
      .setNegativeButton("拒绝",(d,w)->ReceiveForegroundService.decide(MainActivity.this,id,false))
-     .setOnCancelListener(d->ReceiveForegroundService.decide(MainActivity.this,id,false)).show();
+     .setOnCancelListener(d->ReceiveForegroundService.decide(MainActivity.this,id,false)).create();
+    receiveDialog.setOnShowListener(dialog->{
+     Button accept=receiveDialog.getButton(AlertDialog.BUTTON_POSITIVE);
+     Button reject=receiveDialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+     if(accept!=null){accept.setTextColor(Color.WHITE);accept.setTextSize(15);accept.setAllCaps(false);accept.setBackground(shape(0xff20b56b,14));accept.setMinHeight(dp(48));}
+     if(reject!=null){reject.setTextColor(Color.WHITE);reject.setTextSize(15);reject.setAllCaps(false);reject.setBackground(shape(0xffe34b4b,14));reject.setMinHeight(dp(48));}
+    });
+    receiveDialog.show();
    }
   }};
   IntentFilter f=new IntentFilter();f.addAction(ReceiveForegroundService.ACTION_STATUS);f.addAction(ReceiveForegroundService.ACTION_INCOMING);
@@ -380,18 +388,41 @@ public class MainActivity extends Activity {
    TextView add=homeText("+ 添加文件",13,0xff1769e8,true);add.setPadding(dp(10),dp(7),dp(10),dp(7));add.setBackground(shape(0xffedf4ff,12));add.setOnClickListener(v->pick());previewHead.addView(add);preview.addView(previewHead);gap(preview,10);
    long total=0;for(long z:sizes)if(z>0)total+=z;
    preview.addView(homeText("已添加 "+uris.size()+" 个文件 · "+sizeText(total),12,0xff8491a8,false));gap(preview,9);
-   if(uris.isEmpty()){TextView empty=homeText("还没有文件，点击「添加文件」开始选择",13,0xff8491a8,false);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(8),dp(24),dp(8),dp(24));preview.addView(empty);}
-   for(int i=0;i<uris.size();i++){
-    final int index=i;LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(8),dp(8),dp(8));row.setBackground(shape(0xfff4f7ff,13));
-    android.widget.FrameLayout thumb=new android.widget.FrameLayout(this);thumb.setBackground(shape(0xffe8f1ff,11));thumb.setLayoutParams(new LinearLayout.LayoutParams(dp(52),dp(52)));
-    ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);thumb.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));
-    String mime=null;try{mime=getContentResolver().getType(uris.get(i));}catch(Exception ignored){}
-    boolean visual=mime!=null&&(mime.startsWith("image/")||mime.startsWith("video/"));
-    if(visual){try{if(Build.VERSION.SDK_INT>=29)image.setImageBitmap(getContentResolver().loadThumbnail(uris.get(i),new android.util.Size(dp(104),dp(104)),null));else if(mime.startsWith("image/"))image.setImageURI(uris.get(i));else{TextView fallback=homeText("▶",22,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);thumb.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));}}catch(Exception ex){TextView fallback=homeText(mime.startsWith("video/")?"▶":"▧",22,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);thumb.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));}}
-    else{TextView fallback=homeText(mime!=null&&mime.contains("pdf")?"PDF":"▤",18,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);thumb.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));}
-    row.addView(thumb);LinearLayout meta=new LinearLayout(this);meta.setOrientation(LinearLayout.VERTICAL);meta.setPadding(dp(10),0,dp(6),0);TextView fileName=homeText(names.get(i),14,0xff263957,true);fileName.setMaxLines(2);fileName.setEllipsize(android.text.TextUtils.TruncateAt.END);meta.addView(fileName);gap(meta,4);meta.addView(homeText(sizeText(sizes.get(i)),11,0xff8491a8,false));row.addView(meta,new LinearLayout.LayoutParams(0,-2,1));
-    TextView remove=homeText("×",23,0xff91a0b5,true);remove.setGravity(Gravity.CENTER);remove.setPadding(dp(9),dp(4),dp(9),dp(4));remove.setOnClickListener(v->{uris.remove(index);names.remove(index);sizes.remove(index);sendPage();});row.addView(remove);
-    LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(7);preview.addView(row,rp);
+   if(uris.isEmpty()){
+    TextView empty=homeText("还没有文件，点击「添加文件」开始选择",13,0xff8491a8,false);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(8),dp(24),dp(8),dp(24));preview.addView(empty);
+   }else{
+    int screenDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
+    android.widget.GridLayout fileGrid=new android.widget.GridLayout(this);
+    fileGrid.setColumnCount(screenDp>=700?6:(screenDp<360?4:5));
+    fileGrid.setUseDefaultMargins(false);
+    for(int i=0;i<uris.size();i++){
+     final int index=i;
+     LinearLayout fileItem=new LinearLayout(this);fileItem.setOrientation(LinearLayout.VERTICAL);fileItem.setGravity(Gravity.CENTER);fileItem.setPadding(dp(3),dp(5),dp(3),dp(5));
+     android.widget.FrameLayout iconBox=new android.widget.FrameLayout(this);iconBox.setBackground(shape(0xffedf4ff,15));
+     android.widget.GridLayout.LayoutParams cell=new android.widget.GridLayout.LayoutParams();
+     cell.width=0;cell.height=-2;cell.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);
+     cell.setMargins(dp(2),dp(2),dp(2),dp(5));
+     iconBox.setLayoutParams(new LinearLayout.LayoutParams(dp(54),dp(54)));
+     ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);iconBox.addView(image,new android.widget.FrameLayout.LayoutParams(-1,-1));
+     String mime=null;try{mime=getContentResolver().getType(uris.get(i));}catch(Exception ignored){}
+     boolean visual=mime!=null&&(mime.startsWith("image/")||mime.startsWith("video/"));
+     if(visual){
+      try{if(Build.VERSION.SDK_INT>=29)image.setImageBitmap(getContentResolver().loadThumbnail(uris.get(i),new android.util.Size(dp(108),dp(108)),null));else if(mime.startsWith("image/"))image.setImageURI(uris.get(i));else{TextView fallback=homeText("▶",23,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);iconBox.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));}}
+      catch(Exception ex){TextView fallback=homeText(mime.startsWith("video/")?"▶":"▧",23,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);iconBox.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));}
+     }else{
+      String symbol=mime!=null&&mime.contains("pdf")?"PDF":(mime!=null&&mime.contains("audio")?"♫":(mime!=null&&mime.contains("text")?"TXT":"▤"));
+      TextView fallback=homeText(symbol,18,0xff347bd2,true);fallback.setGravity(Gravity.CENTER);iconBox.addView(fallback,new android.widget.FrameLayout.LayoutParams(-1,-1));
+     }
+     TextView remove=homeText("×",15,Color.WHITE,true);remove.setGravity(Gravity.CENTER);remove.setBackground(shape(0xffe45b64,20));
+     android.widget.FrameLayout.LayoutParams removePos=new android.widget.FrameLayout.LayoutParams(dp(20),dp(20),Gravity.RIGHT|Gravity.TOP);iconBox.addView(remove,removePos);
+     remove.setOnClickListener(v->{uris.remove(index);names.remove(index);sizes.remove(index);sendPage();});
+     fileItem.addView(iconBox);
+     TextView fileName=homeText(names.get(i),10,0xff263957,true);fileName.setGravity(Gravity.CENTER);fileName.setMaxLines(1);fileName.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+     LinearLayout.LayoutParams nameLp=new LinearLayout.LayoutParams(-1,-2);nameLp.topMargin=dp(5);fileItem.addView(fileName,nameLp);
+     TextView fileSize=homeText(sizeText(sizes.get(i)),9,0xff8491a8,false);fileSize.setGravity(Gravity.CENTER);fileItem.addView(fileSize);
+     fileGrid.addView(fileItem,cell);
+    }
+    preview.addView(fileGrid);
    }
    l.addView(preview);gap(l,18);
    LinearLayout target=homeCard();LinearLayout targetHead=new LinearLayout(this);targetHead.setGravity(Gravity.CENTER_VERTICAL);targetHead.addView(homeText("目标设备",18,0xff1b2947,true),new LinearLayout.LayoutParams(0,-2,1));
