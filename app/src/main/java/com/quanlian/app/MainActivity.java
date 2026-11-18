@@ -77,11 +77,11 @@ public class MainActivity extends Activity {
  }
  private void runActiveLanScan(){
   if(!alive)return;
-  LanScanner.scan(this,38890,announcement->runOnUiThread(()->{
+  workers.execute(()->LanScanner.scan(this,38890,announcement->runOnUiThread(()->{
    if(!alive||announcement==null||announcement.host==null)return;
    synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}
    refreshDevices();
-  }),status->runOnUiThread(()->{if(deviceStatus!=null&&alive&&devices.isEmpty())deviceStatus.setText(status);}));
+  }),status->runOnUiThread(()->{if(deviceStatus!=null&&alive&&devices.isEmpty())deviceStatus.setText(status);}))); 
  }
  @Override protected void onResume(){super.onResume();registerReceiveReceiver();}
  @Override protected void onPause(){unregisterReceiveReceiver();super.onPause();}
