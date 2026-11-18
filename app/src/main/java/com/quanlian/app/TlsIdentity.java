@@ -69,7 +69,7 @@ public final class TlsIdentity {
         };
         SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
         try(SSLSocket socket=(SSLSocket)ctx.getSocketFactory().createSocket()){
-            socket.connect(new InetSocketAddress(host,port),3000);socket.setSoTimeout(3000);enableModern(socket);socket.startHandshake();
+            socket.connect(new InetSocketAddress(host,port),700);socket.setSoTimeout(1000);enableModern(socket);socket.startHandshake();
             java.security.cert.Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
         }
     }
