@@ -43,7 +43,7 @@ public class MainActivity extends Activity {
  private ServerSocket server; private volatile boolean alive=true; private int port=-1, page=0;
  private LinearLayout deviceList; private TextView deviceStatus, receiveStatus;
  private ProgressDialog sendProgress; private BroadcastReceiver sendReceiver, receiveReceiver; private Device retryDevice;
- static class Device { String name,key; InetAddress host; int port; long udpLastSeen; boolean udpSeen,nsdSeen; Device(String n,String k,InetAddress h,int p){name=n;key=k;host=h;port=p;} }
+ static class Device { String name,key,fingerprint; InetAddress host; int port; long udpLastSeen; boolean udpSeen,nsdSeen; Device(String n,String k,InetAddress h,int p,String fp){name=n;key=k;host=h;port=p;fingerprint=fp;} }
  private int dp(float x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
  private GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));return d;}
  private android.graphics.drawable.Drawable focusBackground(int normal,int focused,int radius){android.graphics.drawable.StateListDrawable states=new android.graphics.drawable.StateListDrawable();GradientDrawable on=shape(focused,radius);on.setStroke(dp(2),0xff72c5ff);GradientDrawable off=shape(normal,radius);states.addState(new int[]{android.R.attr.state_focused},on);states.addState(new int[]{android.R.attr.state_pressed},on);states.addState(new int[]{},off);return states;}
@@ -68,8 +68,8 @@ public class MainActivity extends Activity {
   udpDiscovery=LanDiscovery.listen(announcement->{
    if(!alive||announcement==null||announcement.host==null||announcement.port<1||myName().equals(announcement.name))return;
    workers.execute(()->{
-    if(!LanDiscovery.verify(announcement.host,announcement.port))return;
-    runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
+    if(!LanDiscovery.verify(announcement.host,announcement.port,announcement.fingerprint))return;
+    runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
    });
   });
   new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive&&nsd!=null)discover();},900);
@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
  }
  private void unregisterReceiveReceiver(){if(receiveReceiver!=null){try{unregisterReceiver(receiveReceiver);}catch(Exception ignored){}receiveReceiver=null;}}
  private void publish(){
-  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));
+  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));try{info.setAttribute("fp",TlsIdentity.fingerprint());}catch(Exception ignored){}
   registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){discover();}public void onRegistrationFailed(NsdServiceInfo s,int e){runOnUiThread(()->Toast.makeText(MainActivity.this,"设备广播失败",Toast.LENGTH_SHORT).show());}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
   try{nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);}catch(Exception ignored){}
  }
@@ -117,10 +117,10 @@ public class MainActivity extends Activity {
       InetAddress chosen=info.getHost();
       if(Build.VERSION.SDK_INT>=34){try{for(InetAddress candidate:info.getHostAddresses()){if(candidate instanceof Inet4Address){chosen=candidate;break;}if(chosen==null)chosen=candidate;}}catch(Exception ignored){}}
       if(chosen==null||info.getPort()<1)return;
-      String deviceId=null;try{byte[] raw=info.getAttributes().get("id");if(raw!=null)deviceId=new String(raw,java.nio.charset.StandardCharsets.UTF_8);}catch(Exception ignored){}
-      if(deviceId==null||deviceId.length()<8)deviceId="nsd:"+info.getServiceName();
+      String deviceId=null,fp=null;try{byte[] raw=info.getAttributes().get("id");if(raw!=null)deviceId=new String(raw,java.nio.charset.StandardCharsets.UTF_8);byte[] cert=info.getAttributes().get("fp");if(cert!=null)fp=new String(cert,java.nio.charset.StandardCharsets.UTF_8);}catch(Exception ignored){}
+      if(deviceId==null||deviceId.length()<8)deviceId="nsd:"+info.getServiceName();if(fp==null||!fp.matches("(?i)[0-9a-f]{64}"))return;
       final String key=deviceId;
-      synchronized(devices){Device device=devices.get(key);if(device==null){device=new Device(info.getServiceName(),key,chosen,info.getPort());devices.put(key,device);}device.name=info.getServiceName();device.host=chosen;device.port=info.getPort();device.nsdSeen=true;}
+      synchronized(devices){Device device=devices.get(key);if(device==null){device=new Device(info.getServiceName(),key,chosen,info.getPort(),fp);devices.put(key,device);}device.name=info.getServiceName();device.host=chosen;device.port=info.getPort();device.fingerprint=fp;device.nsdSeen=true;}
       runOnUiThread(()->refreshDevices());
      }
     });}catch(Exception ignored){}
@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
   synchronized(devices){list=new ArrayList<>(devices.values());}
   if(deviceStatus!=null)deviceStatus.setText("发现 "+list.size()+" 台附近设备");
   if(list.isEmpty()){deviceList.addView(txt("暂未发现设备。请让双方打开小李全联并连接同一 Wi-Fi。",14,0xffb7c7de,false));return;}
-  for(Device d:list){LinearLayout item=card();item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(txt(d.name,16,-1,true));labels.addView(txt(d.udpSeen?"UDP 验证在线":"NSD 发现设备",12,0xffa0c3e6,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button fav=btn("☆",0xff304b70);fav.setTextSize(18);fav.setMinWidth(dp(48));fav.setOnClickListener(v->{FavoriteDevices.add(this,d.name,d.host.getHostAddress(),d.port);Toast.makeText(this,"已收藏设备",Toast.LENGTH_SHORT).show();});item.addView(fav);item.addView(txt("发送 ›",15,0xff64beff,true));item.setOnClickListener(v->send(d));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);deviceList.addView(item,p);}
+  for(Device d:list){LinearLayout item=card();item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(txt(d.name,16,-1,true));labels.addView(txt(d.udpSeen?"UDP 验证在线":"NSD 发现设备",12,0xffa0c3e6,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button fav=btn("☆",0xff304b70);fav.setTextSize(18);fav.setMinWidth(dp(48));fav.setOnClickListener(v->{FavoriteDevices.add(this,d.name,d.host.getHostAddress(),d.port,d.fingerprint);Toast.makeText(this,"已收藏设备",Toast.LENGTH_SHORT).show();});item.addView(fav);item.addView(txt("发送 ›",15,0xff64beff,true));item.setOnClickListener(v->send(d));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);deviceList.addView(item,p);}
  }
  private void receive(Socket socket){
   try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
@@ -181,7 +181,7 @@ public class MainActivity extends Activity {
   sendProgress.setCancelable(false);sendProgress.show();
   retryDevice=d;
   registerSendReceiver(d);
-  TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name);
+  TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name,d.fingerprint);
  }
 
  @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -257,7 +257,7 @@ public class MainActivity extends Activity {
   if(deviceStatus!=null)deviceStatus.setText("正在主动扫描局域网 IPv4 地址…");
   workers.execute(()->LanScanner.scan(this,38890,announcement->{
    if(myName().equals(announcement.name))return;
-   runOnUiThread(()->{if(!alive)return;synchronized(devices){Device d=devices.get(announcement.id);if(d==null){d=new Device(announcement.name,announcement.id,announcement.host,announcement.port);devices.put(d.key,d);}d.name=announcement.name;d.host=announcement.host;d.port=announcement.port;d.udpSeen=true;d.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
+   runOnUiThread(()->{if(!alive)return;synchronized(devices){Device d=devices.get(announcement.id);if(d==null){d=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(d.key,d);}d.name=announcement.name;d.host=announcement.host;d.port=announcement.port;d.fingerprint=announcement.fingerprint;d.udpSeen=true;d.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
   },message->runOnUiThread(()->{if(deviceStatus!=null)deviceStatus.setText(message);})));
  }
  private void manualConnect(){
@@ -266,11 +266,11 @@ public class MainActivity extends Activity {
   EditText portInput=new EditText(this);portInput.setSingleLine(true);portInput.setInputType(2);portInput.setHint("端口（默认 38890）");portInput.setText("38890");box.addView(portInput);
   new AlertDialog.Builder(this).setTitle("手动连接设备").setView(box).setNegativeButton("取消",null).setPositiveButton("验证并连接",(dialog,which)->{
    String address=host.getText().toString().trim();int targetPort;try{targetPort=Integer.parseInt(portInput.getText().toString().trim());}catch(Exception e){Toast.makeText(this,"端口无效",Toast.LENGTH_SHORT).show();return;}
-   workers.execute(()->{try{InetAddress ip=InetAddress.getByName(address);if(!ip.getHostAddress().equals(address)&&!address.matches("[0-9.]+"))throw new IOException("请输入有效 IPv4 地址");if(!LanDiscovery.verify(ip,targetPort))throw new IOException("连接验证失败，请检查 IP、端口和对方接收服务");String id="manual:"+ip.getHostAddress()+":"+targetPort;Device d=new Device("手动设备 "+ip.getHostAddress(),id,ip,targetPort);runOnUiThread(()->{synchronized(devices){devices.put(id,d);}FavoriteDevices.add(this,d.name,address,targetPort);refreshDevices();if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已验证并收藏，可在设备列表中发送",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
+   workers.execute(()->{try{InetAddress ip=InetAddress.getByName(address);if(!ip.getHostAddress().equals(address)&&!address.matches("[0-9.]+"))throw new IOException("请输入有效 IPv4 地址");String fp=TlsIdentity.inspectFingerprint(ip.getHostAddress(),targetPort);if(!LanDiscovery.verify(ip,targetPort,fp))throw new IOException("连接验证失败，请检查 IP、端口和对方接收服务");String id="manual:"+ip.getHostAddress()+":"+targetPort;Device d=new Device("手动设备 "+ip.getHostAddress(),id,ip,targetPort,fp);runOnUiThread(()->{synchronized(devices){devices.put(id,d);}FavoriteDevices.add(this,d.name,address,targetPort,fp);refreshDevices();if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已验证并收藏，可在设备列表中发送",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
   }).show();
  }
  private void connectFavorite(FavoriteDevices.Entry entry){
-  workers.execute(()->{try{InetAddress ip=InetAddress.getByName(entry.host);if(!LanDiscovery.verify(ip,entry.port))throw new IOException("设备当前不可连接");Device d=new Device(entry.name,"favorite:"+entry.host+":"+entry.port,ip,entry.port);runOnUiThread(()->{synchronized(devices){devices.put(d.key,d);}if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已连接验证",Toast.LENGTH_SHORT).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"收藏设备连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
+  workers.execute(()->{try{InetAddress ip=InetAddress.getByName(entry.host);if(!LanDiscovery.verify(ip,entry.port,entry.fingerprint))throw new IOException("设备当前不可连接或证书指纹已变化");Device d=new Device(entry.name,"favorite:"+entry.host+":"+entry.port,ip,entry.port,entry.fingerprint);runOnUiThread(()->{synchronized(devices){devices.put(d.key,d);}if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已连接验证",Toast.LENGTH_SHORT).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"收藏设备连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
  }
  private void receivePage(){page=3;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"接收文件","打开接收页面，等待附近设备发送");LinearLayout c=card();c.setGravity(Gravity.CENTER_HORIZONTAL);TextView icon=txt("◎",54,0xff46beae,true);icon.setGravity(Gravity.CENTER);c.addView(icon);gap(c,8);c.addView(txt("正在等待连接",20,-1,true));gap(c,8);receiveStatus=txt(port>0?"接收服务已启动 · 端口 "+port:"正在启动接收服务…",13,0xffb7c7de,false);c.addView(receiveStatus);l.addView(c);gap(l,12);LinearLayout note=card();note.addView(txt("使用方法",16,-1,true));gap(note,6);note.addView(txt("发送设备打开小李全联后，会自动发现本设备。发送方点击本机名称后，本机将弹出接收确认。双方需要连接同一 Wi-Fi。",13,0xffb7c7de,false));l.addView(note);install(l);}
  @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;discoveryHandler.removeCallbacks(pruneDevices);unregisterReceiveReceiver();if(udpDiscovery!=null){udpDiscovery.close();udpDiscovery=null;}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
