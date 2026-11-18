@@ -205,16 +205,6 @@ public class ReceiveForegroundService extends Service {
             try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){copy(in,out);}
             return Uri.fromFile(target);
         }
-        String customTree=prefs.getString("save_tree_uri","");
-        if(customTree!=null&&!customTree.isEmpty()){
-            Uri tree=Uri.parse(customTree);
-            Uri target=android.provider.DocumentsContract.createDocument(getContentResolver(),tree,mime,name);
-            if(target==null)throw new IOException("无法在自定义目录创建文件");
-            try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){
-                if(out==null)throw new IOException("无法写入自定义保存目录");copy(in,out);
-            }catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
-            return target;
-        }
         boolean saveAlbum=prefs.getBoolean("save_to_album",true);
         if(Build.VERSION.SDK_INT>=29&&saveAlbum&&(mime.startsWith("image/")||mime.startsWith("video/"))){
             boolean image=mime.startsWith("image/");
@@ -225,6 +215,16 @@ public class ReceiveForegroundService extends Service {
             try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){if(out==null)throw new IOException("无法写入系统相册");copy(in,out);}
             catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
             values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(target,values,null,null);return target;
+        }
+        String customTree=prefs.getString("save_tree_uri","");
+        if(customTree!=null&&!customTree.isEmpty()){
+            Uri tree=Uri.parse(customTree);
+            Uri target=android.provider.DocumentsContract.createDocument(getContentResolver(),tree,mime,name);
+            if(target==null)throw new IOException("无法在自定义目录创建文件");
+            try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){
+                if(out==null)throw new IOException("无法写入自定义保存目录");copy(in,out);
+            }catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
+            return target;
         }
         if(Build.VERSION.SDK_INT>=29){
             ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
