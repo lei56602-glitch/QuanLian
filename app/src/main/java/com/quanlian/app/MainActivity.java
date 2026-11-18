@@ -207,9 +207,10 @@ public class MainActivity extends Activity {
   if(deviceList==null)return;deviceList.removeAllViews();ArrayList<Device> list;
   synchronized(devices){list=new ArrayList<>(devices.values());}
   if(deviceStatus!=null)deviceStatus.setText("发现 "+list.size()+" 台附近设备");
-  if(list.isEmpty()){deviceList.addView(txt("暂未发现设备。请让双方打开小李全联并连接同一 Wi-Fi。",14,0xffb7c7de,false));return;}
-  for(Device d:list){LinearLayout item=card();item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(txt(d.name,16,-1,true));labels.addView(txt(d.udpSeen?"UDP 验证在线":"NSD 发现设备",12,0xffa0c3e6,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button fav=btn("☆",0xff304b70);fav.setTextSize(18);fav.setMinWidth(dp(48));fav.setOnClickListener(v->{FavoriteDevices.add(this,d.name,d.host.getHostAddress(),d.port,d.fingerprint);Toast.makeText(this,"已收藏设备",Toast.LENGTH_SHORT).show();});item.addView(fav);item.addView(txt("发送 ›",15,0xff64beff,true));item.setOnClickListener(v->send(d));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);deviceList.addView(item,p);}
+  if(list.isEmpty()){deviceList.addView(homeText("暂未发现设备。请让双方打开小李全联并连接同一 Wi-Fi。",13,0xff71809e,false));return;}
+  for(Device d:list){LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);item.setPadding(dp(12),dp(12),dp(12),dp(12));item.setBackground(shape(0xfff4f7ff,14));LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(homeText(d.name,15,0xff17264a,true));labels.addView(homeText(d.udpSeen?"UDP 在线":"局域网发现",11,0xff71809e,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button fav=homeButton("☆",0xff7186a8);fav.setTextSize(13);fav.setMinWidth(dp(44));fav.setOnClickListener(v->{FavoriteDevices.add(this,d.name,d.host.getHostAddress(),d.port,d.fingerprint);Toast.makeText(this,"已收藏设备",Toast.LENGTH_SHORT).show();});item.addView(fav);Button send=homeButton("发送",0xff1769e8);send.setTextSize(13);send.setMinHeight(dp(42));send.setOnClickListener(v->send(d));LinearLayout.LayoutParams sendP=new LinearLayout.LayoutParams(-2,-2);sendP.leftMargin=dp(6);item.addView(send,sendP);item.setOnClickListener(v->{if(!uris.isEmpty())send(d);else pick();});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(8);deviceList.addView(item,p);}
  }
+
  private void receive(Socket socket){
   try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
    s.setSoTimeout(180000);runOnUiThread(()->Toast.makeText(this,"收到设备连接，正在读取发送请求…",Toast.LENGTH_SHORT).show());if(!"QUANLIAN2".equals(in.readUTF()))throw new IOException("传输协议不匹配");String sender=in.readUTF();int count=in.readInt();if(count<1||count>500)return;
@@ -305,25 +306,41 @@ public class MainActivity extends Activity {
 
  private String etaText(long seconds){if(seconds<60)return seconds+" 秒";if(seconds<3600)return (seconds/60)+" 分钟 "+(seconds%60)+" 秒";return (seconds/3600)+" 小时 "+((seconds%3600)/60)+" 分钟";}
  private static String hex(byte[] bytes){StringBuilder b=new StringBuilder(bytes.length*2);for(byte v:bytes)b.append(String.format(Locale.US,"%02x",v&0xff));return b.toString();}
+ private TextView homeText(String value,int size,int color,boolean bold){TextView t=txt(value,size,color,bold);t.setIncludeFontPadding(true);return t;}
+ private LinearLayout homeCard(){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(16),dp(15),dp(16),dp(15));GradientDrawable bg=shape(0xffffffff,20);bg.setStroke(dp(1),0xffe3eaff);c.setBackground(bg);return c;}
+ private Button homeButton(String label,int color){Button b=new Button(this);b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(15);b.setAllCaps(false);b.setMinHeight(dp(52));b.setBackground(shape(color,16));b.setPadding(dp(12),0,dp(12),0);return b;}
+ private void homeNavItem(LinearLayout nav,String label,boolean selected,Runnable action){TextView t=homeText(label,14,selected?0xff1268e8:0xff60708f,selected);t.setGravity(Gravity.CENTER);t.setPadding(dp(10),dp(10),dp(10),dp(10));t.setBackground(selected?shape(0xffe6efff,14):shape(Color.TRANSPARENT,14));t.setOnClickListener(v->action.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(6);nav.addView(t,p);}
  private void home(){
-  page=0;deviceList=null;deviceStatus=null;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));
-  l.addView(txt("小李全联",30,-1,true));TextView sub=txt("让所有设备，自由交换文件",14,0xffabc6e4,false);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.topMargin=dp(4);sp.bottomMargin=dp(22);l.addView(sub,sp);
-  LinearLayout row=new LinearLayout(this);Button send=btn("↑  发送文件",0xff1f77dc),recv=btn("↓  接收文件",0xff1f9e8f);LinearLayout.LayoutParams a=new LinearLayout.LayoutParams(0,dp(62),1);a.rightMargin=dp(6);row.addView(send,a);LinearLayout.LayoutParams b=new LinearLayout.LayoutParams(0,dp(62),1);b.leftMargin=dp(6);row.addView(recv,b);l.addView(row);send.setOnClickListener(v->pick());recv.setOnClickListener(v->receivePage());
-  gap(l,16);Button history=btn("传输历史记录",0xff304b70);history.setOnClickListener(v->historyPage());l.addView(history);
-  gap(l,10);Button diagnostics=btn("故障诊断与日志导出",0xff6a568f);diagnostics.setOnClickListener(v->diagnosticsPage());l.addView(diagnostics);
-  if(BuildConfig.DEBUG){
-   gap(l,10);Switch plainSwitch=new Switch(this);plainSwitch.setText("明文 TCP 诊断模式（不加密，仅测试）");plainSwitch.setTextColor(0xffffc66d);plainSwitch.setTextSize(13);
-   plainSwitch.setChecked(TlsIdentity.plainMode(this));
-   plainSwitch.setOnCheckedChangeListener((button,checked)->{
-    getSharedPreferences(TlsIdentity.PREFS,MODE_PRIVATE).edit().putBoolean(TlsIdentity.KEY_PLAIN,checked).apply();
-    Toast.makeText(this,checked?"已开启明文诊断：两台测试设备都必须开启":"已关闭明文诊断：恢复 TLS 加密",Toast.LENGTH_LONG).show();
-    stopService(new Intent(this,ReceiveForegroundService.class));
-    new android.os.Handler(getMainLooper()).postDelayed(()->ReceiveForegroundService.start(this),700);
-    refreshDiscovery();
-   });
-   l.addView(plainSwitch);
+  page=0;deviceList=null;deviceStatus=null;
+  int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
+  boolean wide=widthDp>=700;
+  getWindow().setStatusBarColor(0xfff4f7ff);getWindow().setNavigationBarColor(0xfff4f7ff);
+  getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.setBackgroundColor(0xfff4f7ff);
+  if(wide){
+   LinearLayout rail=new LinearLayout(this);rail.setOrientation(LinearLayout.VERTICAL);rail.setPadding(dp(18),dp(26),dp(18),dp(18));rail.setBackgroundColor(0xffffffff);
+   TextView brand=homeText("➤  小李全联",22,0xff1769e8,true);rail.addView(brand);TextView slogan=homeText("快速 · 安全 · 免费",12,0xff72809c,false);rail.addView(slogan);gap(rail,30);
+   homeNavItem(rail,"⌂  首页",true,()->home());homeNavItem(rail,"◷  传输记录",false,()->historyPage());homeNavItem(rail,"▦  故障诊断",false,()->diagnosticsPage());homeNavItem(rail,"ⓘ  关于我们",false,()->new AlertDialog.Builder(this).setTitle("小李全联").setMessage("快速、安全、免费的局域网文件传输。").setPositiveButton("知道了",null).show());
+   root.addView(rail,new LinearLayout.LayoutParams(dp(220),-1));
   }
-  gap(l,24);l.addView(txt("附近设备",20,-1,true));gap(l,8);deviceStatus=txt("正在搜索局域网设备…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();gap(l,24);TextView foot=txt("Wi-Fi 局域网直连优先 · 无广告 · 无强制账号",12,0xff96b1cf,false);foot.setGravity(Gravity.CENTER);l.addView(foot);install(l);
+  LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(wide?28:18),dp(wide?22:12),dp(wide?28:18),dp(8));
+  LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
+  LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(homeText("小李全联",wide?28:25,0xff17264a,true));titles.addView(homeText("让文件传输更简单",13,0xff71809e,false));top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));
+  TextView setting=homeText("⚙",25,0xff30456b,true);setting.setGravity(Gravity.CENTER);setting.setOnClickListener(v->diagnosticsPage());top.addView(setting,new LinearLayout.LayoutParams(dp(48),dp(48)));body.addView(top);
+  ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(0,dp(18),0,dp(18));
+  LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
+  LinearLayout sendCard=homeCard();sendCard.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff1769f5,0xff2698ff}));TextView sendIcon=homeText("➤",34,Color.WHITE,true);sendCard.addView(sendIcon);gap(sendCard,8);sendCard.addView(homeText("发送文件",wide?23:18,Color.WHITE,true));sendCard.addView(homeText("选择文件，发送给其他设备",wide?14:11,0xffeaf4ff,false));sendCard.setOnClickListener(v->pick());
+  LinearLayout receiveCard=homeCard();receiveCard.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff19b86a,0xff45d58a}));TextView receiveIcon=homeText("↓",34,Color.WHITE,true);receiveCard.addView(receiveIcon);gap(receiveCard,8);receiveCard.addView(homeText("接收文件",wide?23:18,Color.WHITE,true));receiveCard.addView(homeText("等待附近设备发送文件",wide?14:11,Color.WHITE,false));receiveCard.setOnClickListener(v->receivePage());
+  LinearLayout.LayoutParams actionP=new LinearLayout.LayoutParams(0,-2,1);actionP.rightMargin=dp(6);actions.addView(sendCard,actionP);LinearLayout.LayoutParams receiveP=new LinearLayout.LayoutParams(0,-2,1);receiveP.leftMargin=dp(6);actions.addView(receiveCard,receiveP);content.addView(actions);gap(content,16);
+  LinearLayout nearby=homeCard();LinearLayout nearbyHeader=new LinearLayout(this);nearbyHeader.setGravity(Gravity.CENTER_VERTICAL);nearbyHeader.addView(homeText("附近设备",19,0xff17264a,true),new LinearLayout.LayoutParams(0,-2,1));TextView refresh=homeText("⟳ 刷新",14,0xff1769e8,true);refresh.setOnClickListener(v->refreshDiscovery());nearbyHeader.addView(refresh);nearby.addView(nearbyHeader);gap(nearby,10);
+  deviceStatus=homeText("正在搜索局域网设备…",12,0xff71809e,false);nearby.addView(deviceStatus);gap(nearby,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);nearby.addView(deviceList);content.addView(nearby);refreshDevices();gap(content,14);
+  LinearLayout shortcuts=new LinearLayout(this);shortcuts.setGravity(Gravity.CENTER_VERTICAL);String[] labels={"选择文件","传输记录","故障诊断"};String[] hints={"图片 / 视频 / 文档","查看已完成任务","查看连接日志"};for(int i=0;i<labels.length;i++){final int index=i;LinearLayout tile=homeCard();tile.setPadding(dp(10),dp(13),dp(10),dp(13));tile.setGravity(Gravity.CENTER);tile.addView(homeText(index==0?"▧":index==1?"◷":"ⓘ",24,index==0?0xff1675f5:index==1?0xff16a6a0:0xff8063dc,true));tile.addView(homeText(labels[i],13,0xff24365c,true));tile.addView(homeText(hints[i],10,0xff7785a2,false));tile.setOnClickListener(v->{if(index==0)pick();else if(index==1)historyPage();else diagnosticsPage();});LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);if(i>0)tp.leftMargin=dp(8);shortcuts.addView(tile,tp);}content.addView(shortcuts);gap(content,14);
+  LinearLayout status=homeCard();status.setOrientation(LinearLayout.HORIZONTAL);status.setGravity(Gravity.CENTER_VERTICAL);LinearLayout speed=new LinearLayout(this);speed.setOrientation(LinearLayout.VERTICAL);speed.addView(homeText("传输体验",13,0xff647493,false));speed.addView(homeText("高速 · 稳定",18,0xff17264a,true));status.addView(speed,new LinearLayout.LayoutParams(0,-2,1));LinearLayout security=new LinearLayout(this);security.setOrientation(LinearLayout.VERTICAL);security.addView(homeText("安全加密",13,0xff647493,false));security.addView(homeText("TLS 加密传输",15,0xff15975b,true));status.addView(security);content.addView(status);
+  TextView footer=homeText("局域网直连优先  ·  无广告  ·  无强制账号",11,0xff8491aa,false);footer.setGravity(Gravity.CENTER);LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,-2);fp.topMargin=dp(16);content.addView(footer,fp);
+  scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  if(!wide){LinearLayout bottom=new LinearLayout(this);bottom.setGravity(Gravity.CENTER);bottom.setBackgroundColor(Color.WHITE);homeNavItem(bottom,"⌂  首页",true,()->home());homeNavItem(bottom,"◷  记录",false,()->historyPage());homeNavItem(bottom,"▦  更多",false,()->diagnosticsPage());homeNavItem(bottom,"ⓘ  关于",false,()->new AlertDialog.Builder(this).setTitle("小李全联").setMessage("快速、安全、免费的局域网文件传输。").setPositiveButton("知道了",null).show());root.addView(bottom,new LinearLayout.LayoutParams(-1,-2));}
+  root.addView(body,new LinearLayout.LayoutParams(wide?0:-1,-1,wide?1:0));if(wide){root.removeView(body);root.addView(body,new LinearLayout.LayoutParams(0,-1,1));}
+  setContentView(root);
  }
 
  private void diagnosticsPage(){
