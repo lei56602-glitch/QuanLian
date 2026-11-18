@@ -75,9 +75,26 @@ public class ReceiveForegroundService extends Service {
     private void listen(){
         try{
             server=TlsIdentity.serverSocket(this,DEFAULT_PORT);
-            int port=server.getLocalPort();android.util.Log.i("QuanLianReceive",(TlsIdentity.plainMode(this)?"PLAIN TCP":"TLS")+" receive server listening on 0.0.0.0:"+port);publish(port);startUdpAnnouncing(port);
+            int port=server.getLocalPort();
+            android.util.Log.i("QuanLianReceive","LISTENER_READY mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS")
+                +", bind="+server.getInetAddress().getHostAddress()+":"+port
+                +", reuseAddress="+server.getReuseAddress()+", deviceId="+DeviceIdentity.id(this));
+            publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
-            while(running){Socket s=server.accept();android.util.Log.d("QuanLianReceive","Accepted socket local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()+", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()+", mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"));s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
+            while(running){
+                long acceptStarted=android.os.SystemClock.elapsedRealtime();
+                Socket s=server.accept();
+                android.util.Log.i("QuanLianReceive","TCP_ACCEPTED local="+s.getLocalAddress().getHostAddress()+":"+s.getLocalPort()
+                    +", peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
+                    +", acceptWaitMs="+(android.os.SystemClock.elapsedRealtime()-acceptStarted)
+                    +", mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"));
+                s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);
+                clients.execute(()->{try{receive(s);}catch(Exception e){
+                    android.util.Log.e("QuanLianReceive","SESSION_FAILED peer="+s.getInetAddress().getHostAddress()+":"+s.getPort()
+                        +", exception="+e.getClass().getName()+": "+e.getMessage(),e);
+                    broadcastStatus("连接会话失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());
+                }finally{activeSockets.remove(s);}});
+            }
         }catch(Exception e){if(running){android.util.Log.e("QuanLianReceive","Receive listener failed",e);broadcastStatus("接收服务异常："+e.getClass().getSimpleName()+"："+e.getMessage(),-1);}}
     }
     private void startUdpAnnouncing(int port){
