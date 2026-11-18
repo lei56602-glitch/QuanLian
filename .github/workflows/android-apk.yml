@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [ main, v1.0-development, feature/hotspot-direct-transfer ]
+    branches: [ main, v1.0-development, feature/hotspot-direct-transfer, feature/transfer-speed-optimization ]
   workflow_dispatch:
 permissions:
   contents: read
