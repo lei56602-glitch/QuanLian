@@ -101,7 +101,7 @@ public class ReceiveForegroundService extends Service {
     private void receive(Socket socket){
         acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
-            String protocol=in.readUTF();if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}if(!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
+            String protocol=in.readUTF();if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
@@ -114,8 +114,23 @@ public class ReceiveForegroundService extends Service {
             byte[] buf=new byte[BUF];
             for(int x=0;x<count;x++){
                 StringBuilder clean=new StringBuilder();for(char ch:names.get(x).toCharArray())clean.append("\\\\/:*?\"<>|".indexOf(ch)>=0?"_":ch);String safe=clean.toString().trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+x;
-                File tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");MessageDigest digest=MessageDigest.getInstance("SHA-256");long left=sizes.get(x);
-                try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
+                File tmp;
+                MessageDigest digest=MessageDigest.getInstance("SHA-256");
+                long left=sizes.get(x);
+                if(resumable){
+                    tmp=new File(dir,".quanlian_"+hashes.get(x).toLowerCase(Locale.ROOT)+".part");
+                    if(tmp.exists()&&tmp.length()>left)tmp.delete();
+                    long offset=tmp.exists()?tmp.length():0;
+                    try(InputStream prior=new FileInputStream(tmp)){byte[] old=new byte[BUF];int n;while((n=prior.read(old))!=-1)digest.update(old,0,n);}catch(FileNotFoundException ignored){}
+                    out.writeLong(offset);out.flush();left-=offset;
+                    try(FileOutputStream fos=new FileOutputStream(tmp,true)){
+                        byte[] chunk=new byte[1024*1024];
+                        while(left>0){int n=in.readInt();if(n<1||n>chunk.length||n>left)throw new IOException("续传数据块长度无效");in.readFully(chunk,0,n);fos.write(chunk,0,n);digest.update(chunk,0,n);left-=n;fos.getFD().sync();out.writeLong(sizes.get(x)-left);out.flush();}
+                    }
+                }else{
+                    tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");
+                    try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
+                }
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
                 Uri saved;try{saved=saveFile(tmp,safe);}finally{if(tmp.exists())tmp.delete();}if(saved==null)throw new IOException("无法保存文件："+safe);
                 addHistory(safe,sizes.get(x),sender,saved.toString());broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
