@@ -130,9 +130,39 @@ public class MainActivity extends Activity {
    {"小李全联是一款局域网文件传输工具。\n版本：1.0.1\n无广告，不上传文件内容。","Xiao Li Quan Lian is a local-network file transfer app.\nVersion: 1.0.1\nNo ads. File contents are not uploaded."},
    {"感谢支持。当前版本尚未配置可验证的收款渠道，因此不会展示虚构的二维码或支付链接。","Thank you for your support. No verified payment channel is configured in this version, so no fake QR code or payment link is shown."},
    {"连接失败后，发送端和接收端分别导出","Export logs from both sender and receiver after a connection failure"},
-   {"保存目录：","Save folder: "}
+   {"保存目录：","Save folder: "},
+   {"关闭后，文件会保存在应用专属目录，不会自动写入公共下载目录。","When disabled, files stay in the app-specific folder instead of the public Downloads folder."},
+   {"开启后会自动接受附近设备发来的文件请求，请仅在可信网络中启用。","When enabled, incoming requests from nearby devices are accepted automatically. Use only on trusted networks."},
+   {"1. 两台手机都安装带有此功能的版本。\n2. 先分别打开本页面，确认旧日志已清空。\n3. 返回首页，重现一次发送失败。\n4. 两台手机分别回到本页面，点击“复制完整日志”或“分享日志”。\n5. 把两份日志都发给开发者。\n\n日志包含 TCP、TLS、证书校验、接收请求及异常堆栈，不记录文件内容。","1. Install this version on both phones.\n2. Open this page on both devices and clear old logs.\n3. Reproduce the transfer failure.\n4. Export or copy the full logs from both devices.\n5. Send both logs to the developer.\n\nLogs include TCP, TLS, certificate validation and transfer errors, but never file contents."},
+   {"设备名称需为 2–32 个字符","Device name must be 2–32 characters."},
+   {"设备没有有效的 TLS 身份证书，已阻止连接","The device has no valid TLS identity certificate. Connection blocked."},
+   {"该设备的证书指纹与此前信任的身份不同。为防止设备冒充，已阻止发送。","This device's certificate fingerprint differs from the previously trusted identity. Sending was blocked to prevent impersonation."},
+   {"首次连接 · 确认设备身份","First connection · Verify device identity"},
+   {"正在主动扫描局域网 IPv4 地址…","Actively scanning local IPv4 addresses…"},
+   {"请先添加要发送的文件","Add files before sending."},
+   {"已取消发送","Sending cancelled."},
+   {"已拒绝或取消接收","Receive request declined or cancelled."},
+   {"等待接收确认超时","Timed out waiting for receive confirmation."},
+   {"文件校验失败：","File integrity check failed: "},
+   {"接收完成，文件完整性校验通过","Receive complete. File integrity verified."},
+   {"接收失败：","Receive failed: "},
+   {"已收藏设备","Device added to favorites"},
+   {"暂无收藏设备","No favorite devices"},
+   {"收藏设备","Favorite devices"},
+   {"还没有收藏设备","No favorite devices yet"},
+   {"无法读取当前 Wi-Fi/热点的 IPv4 网段","Unable to read the current Wi-Fi/hotspot IPv4 subnet"},
+   {"正在扫描局域网 ","Scanning LAN "},
+   {" 个地址…"," addresses…"},
+   {"局域网主动扫描完成","LAN scan completed"},
+   {"扫描超时，已显示目前发现的设备","Scan timed out. Currently discovered devices are shown."},
+   {"无法创建应用内接收目录","Unable to create app-specific receive folder"},
+   {"无法在自定义目录创建文件","Unable to create file in the selected folder"},
+   {"无法保存到系统相册","Unable to save to system gallery"},
+   {"请允许小李全联安装应用，然后返回历史记录再次点击安装","Allow Xiao Li Quan Lian to install apps, then return to history and tap Install again."}
   };
   for(String[] p:m)if(p[0].equals(s))return p[1];
+  if(s.startsWith("发送成功："))return "Sent successfully: "+s.substring(5);
+  if(s.startsWith("文件校验失败："))return "File integrity check failed: "+s.substring(7);
   if(s.startsWith("接收服务已启动 · 端口 "))return "Receive service started · port "+s.substring("接收服务已启动 · 端口 ".length);
   if(s.startsWith("正在重新搜索局域网设备"))return "Searching the local network again…";
   if(s.startsWith("已发送到 "))return "Sent to "+s.substring(5);
