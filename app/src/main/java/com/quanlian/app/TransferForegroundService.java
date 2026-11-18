@@ -61,7 +61,7 @@ public class TransferForegroundService extends Service {
         else context.startService(intent);
     }
 
-    public static void sendFiles(Context context, ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer) {
+    public static void sendFiles(Context context, ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, String fingerprint) {
         Intent intent = new Intent(context, TransferForegroundService.class);
         intent.setAction(ACTION_SEND);
         intent.putParcelableArrayListExtra("uris", uris);
@@ -69,6 +69,7 @@ public class TransferForegroundService extends Service {
         intent.putExtra("host", host);
         intent.putExtra("port", port);
         intent.putExtra("peer", peer);
+        intent.putExtra("fingerprint", fingerprint);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent);
         else context.startService(intent);
     }
@@ -143,19 +144,19 @@ public class TransferForegroundService extends Service {
                 final String host = intent.getStringExtra("host");
                 final int port = intent.getIntExtra("port", -1);
                 final String peer = intent.getStringExtra("peer");
-                transferExecutor.execute(() -> executeSend(uris, names, host, port, peer, startId));
+                final String fingerprint = intent.getStringExtra("fingerprint");
+                transferExecutor.execute(() -> executeSend(uris, names, host, port, peer, fingerprint, startId));
             }
         }
         return START_NOT_STICKY;
     }
 
     private static class SendFile {
-        final File file; final String name; final long size; final String hash;
-        SendFile(File file, String name, long size, String hash) { this.file=file; this.name=name; this.size=size; this.hash=hash; }
+        final Uri uri; final String name; final long size; final String hash;
+        SendFile(Uri uri, String name, long size, String hash) { this.uri=uri; this.name=name; this.size=size; this.hash=hash; }
     }
 
-    private void executeSend(ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, int startId) {
-        ArrayList<File> tempFiles = new ArrayList<>();
+    private void executeSend(ArrayList<Uri> uris, ArrayList<String> names, String host, int port, String peer, String fingerprint, int startId) {
         boolean cancelled = false;
         String failure = null;
         try {
@@ -166,34 +167,29 @@ public class TransferForegroundService extends Service {
             long totalBytes = 0;
             for (int i=0; i<uris.size(); i++) {
                 if (cancelRequested.get()) throw new IOException("已取消发送");
-                File cached = File.createTempFile("quanlian_send_", ".bin", getCacheDir());
-                tempFiles.add(cached);
                 MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 long length = 0;
-                try (InputStream input = getContentResolver().openInputStream(uris.get(i));
-                     FileOutputStream output = new FileOutputStream(cached)) {
+                try (InputStream input = getContentResolver().openInputStream(uris.get(i))) {
                     if (input == null) throw new IOException("无法读取文件：" + names.get(i));
                     int n;
                     while ((n=input.read(buffer))!=-1) {
                         if (cancelRequested.get()) throw new IOException("已取消发送");
-                        output.write(buffer,0,n); digest.update(buffer,0,n); length += n;
+                        digest.update(buffer,0,n); length += n;
                     }
-                    output.getFD().sync();
                 }
                 if (totalBytes > Long.MAX_VALUE-length) throw new IOException("文件总大小超出限制");
                 totalBytes += length;
-                files.add(new SendFile(cached,names.get(i),length,hex(digest.digest())));
+                files.add(new SendFile(uris.get(i),names.get(i),length,hex(digest.digest())));
             }
             if (cancelRequested.get()) throw new IOException("已取消发送");
             updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
-            try (Socket socket = new Socket()) {
+            try (javax.net.ssl.SSLSocket socket = TlsIdentity.connect(host,port,fingerprint)) {
                 activeSocket.set(socket);
-                socket.connect(new InetSocketAddress(InetAddress.getByName(host),port),15000);
                 socket.setSoTimeout(180000); socket.setTcpNoDelay(true); socket.setKeepAlive(true);
                 updateStatus("已连接设备，正在等待对方确认…", 0);
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
                 DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-                out.writeUTF("QUANLIAN2"); out.writeUTF(deviceName()); out.writeInt(files.size());
+                out.writeUTF("QUANLIAN3"); out.writeUTF(deviceName()); out.writeUTF(DeviceIdentity.id(this)); out.writeInt(files.size());
                 for (SendFile file : files) { out.writeUTF(file.name); out.writeLong(file.size); out.writeUTF(file.hash); }
                 out.flush();
                 if (!in.readBoolean()) throw new IOException("对方拒绝接收或接收确认超时");
@@ -202,21 +198,28 @@ public class TransferForegroundService extends Service {
                 for (SendFile file : files) {
                     index++;
                     updateStatus("正在发送第 " + index + "/" + files.size() + " 个文件：" + file.name, totalBytes==0?0:(int)(sent*1000/totalBytes));
-                    try (InputStream input = new BufferedInputStream(new FileInputStream(file.file))) {
-                        int n;
-                        while ((n=input.read(buffer))!=-1) {
-                            if (cancelRequested.get()) throw new IOException("已取消发送");
-                            out.write(buffer,0,n); sent += n;
+                    long offset=in.readLong();
+                    if(offset<0||offset>file.size)throw new IOException("接收端续传位置无效");
+                    sent+=offset;
+                    try (InputStream input = new BufferedInputStream(getContentResolver().openInputStream(file.uri))) {
+                        if(input==null)throw new IOException("无法重新读取文件："+file.name);
+                        long skipped=0;while(skipped<offset){long n=input.skip(offset-skipped);if(n<=0){if(input.read()==-1)throw new EOFException("无法定位续传位置");n=1;}skipped+=n;}
+                        byte[] chunk=new byte[1024*1024];
+                        long remainingFile=file.size-offset;
+                        while(remainingFile>0){
+                            if(cancelRequested.get())throw new IOException("已取消发送");
+                            int wanted=(int)Math.min(chunk.length,remainingFile),n=0;
+                            while(n<wanted){int read=input.read(chunk,n,wanted-n);if(read<0)throw new EOFException("本地文件读取中断");n+=read;}
+                            out.writeInt(n);out.write(chunk,0,n);out.flush();
+                            long ack=in.readLong();if(ack!=offset+n)throw new IOException("接收端数据块确认不一致");
+                            offset=ack;remainingFile-=n;sent+=n;
                             long now=System.currentTimeMillis();
-                            if (now-lastUi>250 || sent==totalBytes) {
+                            if(now-lastUi>250||sent==totalBytes){
                                 int progress=totalBytes==0?1000:(int)Math.min(1000,(sent*1000.0/totalBytes));
-                                long elapsed=Math.max(1,now-started), speed=(long)(sent*1000.0/elapsed);
-                                long remaining=speed>0?(totalBytes-sent)/speed:0;
-                                updateStatus("正在发送：" + sizeText(sent) + " / " + sizeText(totalBytes) + " · " + sizeText(speed) + "/秒 · 剩余约 " + etaText(remaining), progress);
-                                lastUi=now;
+                                long elapsed=Math.max(1,now-started),speed=(long)(sent*1000.0/elapsed),remaining=speed>0?(totalBytes-sent)/speed:0;
+                                updateStatus("正在发送："+sizeText(sent)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining),progress);lastUi=now;
                             }
                         }
-                        out.flush();
                     }
                 }
                 if (!in.readBoolean()) throw new IOException("接收端未确认完成或文件校验失败");
@@ -227,7 +230,6 @@ public class TransferForegroundService extends Service {
             failure = e.getMessage()==null ? "传输中断" : e.getMessage();
         } finally {
             activeSocket.set(null);
-            for (File file : tempFiles) try { if (file.exists()) file.delete(); } catch (Exception ignored) { }
             transferRunning.set(false);
             releaseWakeLock();
             publishResult(failure==null, cancelled, failure);
@@ -251,13 +253,7 @@ public class TransferForegroundService extends Service {
         sendBroadcast(event);
     }
 
-    private String deviceName() {
-        String model=Build.MODEL;
-        if(model==null||model.trim().isEmpty()) model="Android";
-        String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);
-        if(id==null||id.length()<6) id=UUID.randomUUID().toString().replace("-","");
-        return "小李全联-" + model.replaceAll("[^\\p{L}\\p{N}_-]","") + "-" + id.substring(id.length()-6);
-    }
+    private String deviceName() { return DeviceIdentity.name(this); }
 
     private String sizeText(long value) {
         if(value<1024) return value+" B";

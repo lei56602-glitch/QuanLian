@@ -24,17 +24,18 @@ public class ReceiveForegroundService extends Service {
     public static final String EXTRA_ID="request_id", EXTRA_ACCEPT="accept", EXTRA_SENDER="sender", EXTRA_COUNT="count", EXTRA_TOTAL="total", EXTRA_PORT="port", EXTRA_TEXT="text", EXTRA_PROGRESS="progress";
     private static final String TYPE="_quanlian._tcp.", CHANNEL="quanlian_receive";
     private static final int NOTIFICATION_ID=2102, BUF=65536;
+    public static final int DEFAULT_PORT=38890;
     private final ExecutorService clients=Executors.newCachedThreadPool();
     private final Set<Socket> activeSockets=ConcurrentHashMap.newKeySet();
     private PowerManager.WakeLock receiveWakeLock;
     private final Handler main=new Handler(Looper.getMainLooper());
     private volatile boolean running=true;
     private ServerSocket server;
-    private volatile int listeningPort=-1;
-    private final Runnable udpAnnouncer=new Runnable(){@Override public void run(){if(!running)return;announceUdp();main.postDelayed(this,2500);}};
     private NsdManager nsd;
     private NsdManager.RegistrationListener registration;
     private WifiManager.MulticastLock multicastLock;
+    private volatile boolean udpAnnouncing;
+    private Thread udpAnnounceThread;
     private BroadcastReceiver decisions;
     private final ConcurrentMap<String,PendingRequest> pendingRequests=new ConcurrentHashMap<>();
     private static class PendingRequest {
@@ -73,41 +74,27 @@ public class ReceiveForegroundService extends Service {
     }
     private void listen(){
         try{
-            server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",0));
-            int port=server.getLocalPort();listeningPort=port;publish(port);main.post(udpAnnouncer);
+            server=TlsIdentity.serverSocket(DEFAULT_PORT);
+            int port=server.getLocalPort();android.util.Log.i("QuanLianReceive","TLS receive server listening on 0.0.0.0:"+port);publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
-            while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
-        }catch(Exception e){if(running)broadcastStatus("接收服务异常："+e.getMessage(),-1);}
+            while(running){Socket s=server.accept();android.util.Log.i("QuanLianReceive","Incoming TCP/TLS connection from "+s.getInetAddress().getHostAddress());s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
+        }catch(Exception e){if(running){android.util.Log.e("QuanLianReceive","Receive listener failed",e);broadcastStatus("接收服务异常："+e.getClass().getSimpleName()+"："+e.getMessage(),-1);}}
     }
-    private void announceUdp(){
-        if(!running||listeningPort<1)return;
-        JSONObject json=new JSONObject();
-        try{json.put("app","QuanLian");json.put("v",1);json.put("name",deviceName());json.put("port",listeningPort);}catch(Exception ignored){return;}
-        byte[] data=json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        try{
-            Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
-            while(interfaces!=null&&interfaces.hasMoreElements()){
-                NetworkInterface ni=interfaces.nextElement();
-                try{if(!ni.isUp()||ni.isLoopback())continue;}catch(Exception e){continue;}
-                for(InterfaceAddress ia:ni.getInterfaceAddresses()){
-                    InetAddress local=ia.getAddress();
-                    if(!(local instanceof Inet4Address)||local.isLoopbackAddress())continue;
-                    LinkedHashSet<InetAddress> targets=new LinkedHashSet<>();
-                    if(ia.getBroadcast()!=null)targets.add(ia.getBroadcast());
-                    try{targets.add(InetAddress.getByName("255.255.255.255"));}catch(Exception ignored){}
-                    for(InetAddress target:targets){
-                        try(DatagramSocket socket=new DatagramSocket(new InetSocketAddress(local,0))){
-                            socket.setBroadcast(true);
-                            socket.send(new DatagramPacket(data,data.length,target,38889));
-                        }catch(Exception ignored){}
-                    }
-                }
+    private void startUdpAnnouncing(int port){
+        udpAnnouncing=true;
+        udpAnnounceThread=new Thread(()->{
+            while(running&&udpAnnouncing){
+                LanDiscovery.announce(DeviceIdentity.id(this),deviceName(),port);
+                try{Thread.sleep(2000);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
             }
-        }catch(Exception ignored){}
+        },"QuanLian-UDP-Announcer");
+        udpAnnounceThread.setDaemon(true);
+        udpAnnounceThread.start();
     }
-    private String deviceName(){String m=Build.MODEL==null?"Android":Build.MODEL;String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
+
+    private String deviceName(){return DeviceIdentity.name(this);}
     private void publish(int port){
-        try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);
+        try{NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(deviceName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));info.setAttribute("fp",TlsIdentity.fingerprint());
             registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){broadcastStatus("局域网设备广播已启动："+s.getServiceName(),port());}public void onRegistrationFailed(NsdServiceInfo s,int e){broadcastStatus("设备广播失败（"+e+"），正在重试",-1);main.postDelayed(()->{if(running)publish(port());},2500);}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
             nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);
         }catch(Exception e){broadcastStatus("设备广播启动失败",-1);}
@@ -115,27 +102,45 @@ public class ReceiveForegroundService extends Service {
     private void receive(Socket socket){
         acquireReceiveWakeLock();
         try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
-            if(!"QUANLIAN2".equals(in.readUTF()))throw new IOException("传输协议不匹配");
-            String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
+            String protocol=in.readUTF();android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean resumable="QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
+            String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
+            android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
             Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);
             out.writeBoolean(accepted);out.flush();if(!accepted)return;
-            File dir=new File(getCacheDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
+            File dir=new File(getFilesDir(),"QuanLianIncoming");if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建临时目录");
             byte[] buf=new byte[BUF];
             for(int x=0;x<count;x++){
                 StringBuilder clean=new StringBuilder();for(char ch:names.get(x).toCharArray())clean.append("\\\\/:*?\"<>|".indexOf(ch)>=0?"_":ch);String safe=clean.toString().trim();if(safe.isEmpty()||safe.equals(".")||safe.equals(".."))safe="received_file_"+x;
-                File tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");MessageDigest digest=MessageDigest.getInstance("SHA-256");long left=sizes.get(x);
-                try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
+                File tmp;
+                MessageDigest digest=MessageDigest.getInstance("SHA-256");
+                long left=sizes.get(x);
+                String completedKey=Integer.toHexString(senderId.hashCode())+"_"+hashes.get(x).toLowerCase(Locale.ROOT);
+                if(resumable&&getSharedPreferences("completed_incoming",MODE_PRIVATE).getBoolean(completedKey,false)){out.writeLong(sizes.get(x));out.flush();continue;}
+                if(resumable){
+                    tmp=new File(dir,".quanlian_"+Integer.toHexString(senderId.hashCode())+"_"+hashes.get(x).toLowerCase(Locale.ROOT)+".part");
+                    if(tmp.exists()&&tmp.length()>left)tmp.delete();
+                    long offset=tmp.exists()?tmp.length():0;
+                    try(InputStream prior=new FileInputStream(tmp)){byte[] old=new byte[BUF];int n;while((n=prior.read(old))!=-1)digest.update(old,0,n);}catch(FileNotFoundException ignored){}
+                    out.writeLong(offset);out.flush();left-=offset;
+                    try(FileOutputStream fos=new FileOutputStream(tmp,true)){
+                        byte[] chunk=new byte[1024*1024];
+                        while(left>0){int n=in.readInt();if(n<1||n>chunk.length||n>left)throw new IOException("续传数据块长度无效");in.readFully(chunk,0,n);fos.write(chunk,0,n);digest.update(chunk,0,n);left-=n;fos.getFD().sync();out.writeLong(sizes.get(x)-left);out.flush();}
+                    }
+                }else{
+                    tmp=new File(dir,".quanlian_"+UUID.randomUUID()+".part");
+                    try(FileOutputStream fos=new FileOutputStream(tmp)){while(left>0){int n=in.read(buf,0,(int)Math.min(buf.length,left));if(n<0)throw new EOFException("文件未传完");fos.write(buf,0,n);digest.update(buf,0,n);left-=n;}fos.getFD().sync();}
+                }
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
                 Uri saved;try{saved=saveFile(tmp,safe);}finally{if(tmp.exists())tmp.delete();}if(saved==null)throw new IOException("无法保存文件："+safe);
-                addHistory(safe,sizes.get(x),sender,saved.toString());broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
+                addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
-        }catch(Exception e){broadcastStatus("接收失败："+e.getMessage(),port());}
+        }catch(Exception e){android.util.Log.e("QuanLianReceive","TLS/接收会话处理失败",e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
         finally{releaseReceiveWakeLock();}
     }
     private int port(){return server==null?-1:server.getLocalPort();}
@@ -163,7 +168,7 @@ public class ReceiveForegroundService extends Service {
     private void broadcastStatus(String text,int port,int progress){Intent i=new Intent(ACTION_STATUS).setPackage(getPackageName());i.putExtra(EXTRA_TEXT,text);i.putExtra(EXTRA_PORT,port);if(progress>=0)i.putExtra(EXTRA_PROGRESS,progress);sendBroadcast(i);}
     @Override public int onStartCommand(Intent i,int flags,int id){return START_STICKY;}
     @Override public void onDestroy(){
-        running=false;main.removeCallbacks(udpAnnouncer);try{if(server!=null)server.close();}catch(Exception ignored){}
+        running=false;udpAnnouncing=false;if(udpAnnounceThread!=null)udpAnnounceThread.interrupt();try{if(server!=null)server.close();}catch(Exception ignored){}
         for(Socket socket:activeSockets){try{socket.close();}catch(Exception ignored){}}activeSockets.clear();releaseReceiveWakeLock();
         try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}
         try{if(multicastLock!=null&&multicastLock.isHeld())multicastLock.release();}catch(Exception ignored){}

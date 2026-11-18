@@ -38,12 +38,12 @@ public class MainActivity extends Activity {
  private final ArrayList<Long> sizes=new ArrayList<>();
  private final Map<String,Device> devices=new LinkedHashMap<>();
  private final ExecutorService workers=Executors.newCachedThreadPool();
- private NsdManager nsd; private NsdManager.RegistrationListener registration;
- private NsdManager.DiscoveryListener discovery; private WifiManager.MulticastLock lock;
- private ServerSocket server; private volatile boolean alive=true; private volatile boolean udpRunning=false; private volatile DatagramSocket udpSocket; private Thread udpThread; private int port=-1, page=0;
+ private NsdManager nsd; private NsdManager.RegistrationListener registration; private LanDiscovery.Listener udpDiscovery;
+ private NsdManager.DiscoveryListener discovery; private WifiManager.MulticastLock lock; private final android.os.Handler discoveryHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+ private ServerSocket server; private volatile boolean alive=true; private volatile int port=-1; private int page=0;
  private LinearLayout deviceList; private TextView deviceStatus, receiveStatus;
  private ProgressDialog sendProgress; private BroadcastReceiver sendReceiver, receiveReceiver; private Device retryDevice;
- static class Device { String name,key; InetAddress host; int port; Device(String n,String k,InetAddress h,int p){name=n;key=k;host=h;port=p;} }
+ static class Device { String name,key,fingerprint; InetAddress host; int port; long udpLastSeen; boolean udpSeen,nsdSeen; Device(String n,String k,InetAddress h,int p,String fp){name=n;key=k;host=h;port=p;fingerprint=fp;} }
  private int dp(float x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
  private GradientDrawable shape(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));return d;}
  private android.graphics.drawable.Drawable focusBackground(int normal,int focused,int radius){android.graphics.drawable.StateListDrawable states=new android.graphics.drawable.StateListDrawable();GradientDrawable on=shape(focused,radius);on.setStroke(dp(2),0xff72c5ff);GradientDrawable off=shape(normal,radius);states.addState(new int[]{android.R.attr.state_focused},on);states.addState(new int[]{android.R.attr.state_pressed},on);states.addState(new int[]{},off);return states;}
@@ -54,8 +54,30 @@ public class MainActivity extends Activity {
  private Button btn(String s,int c){Button b=new Button(this);b.setText(s);b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
  private void install(LinearLayout l){int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);ScrollView s=new ScrollView(this);s.setFillViewport(true);s.setFocusable(false);if(widthDp>=700){FrameLayout frame=new FrameLayout(this);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.min(widthDp,1200)*((int)getResources().getDisplayMetrics().density),-1,Gravity.CENTER);s.addView(l,new ScrollView.LayoutParams(-1,-2));frame.addView(s,p);setContentView(frame);}else{s.addView(l);setContentView(s);}if(widthDp>=700){l.setPadding(dp(32),dp(28),dp(32),dp(28));}l.post(()->{ArrayList<View> focusables=l.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty()&&!focusables.get(0).hasFocus())focusables.get(0).requestFocus();});}
  private void header(LinearLayout l,String title,String sub){TextView back=txt("‹  返回首页",15,0xffa0c3e6,true);back.setPadding(0,0,0,dp(18));back.setOnClickListener(v->home());l.addView(back);l.addView(txt(title,25,-1,true));gap(l,6);l.addView(txt(sub,14,0xffabc6e4,false));gap(l,20);}
- private String myName(){String m=android.os.Build.MODEL;if(m==null||m.trim().isEmpty())m="Android";String id=Settings.Secure.getString(getContentResolver(),Settings.Secure.ANDROID_ID);if(id==null||id.length()<6)id=UUID.randomUUID().toString().replace("-","");return "小李全联-"+m.replaceAll("[^\\p{L}\\p{N}_-]","")+"-"+id.substring(id.length()-6);}
- @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(0xff0a1428);getWindow().setNavigationBarColor(0xff0a1428);nsd=(NsdManager)getSystemService(NSD_SERVICE);requestNotificationPermissionIfNeeded();if(b!=null){try{ArrayList<android.os.Parcelable> saved=b.getParcelableArrayList("selected_uris");if(saved!=null)for(android.os.Parcelable item:saved)if(item instanceof Uri)uris.add((Uri)item);ArrayList<String> savedNames=b.getStringArrayList("selected_names");if(savedNames!=null)names.addAll(savedNames);ArrayList<Long> savedSizes=(ArrayList<Long>)b.getSerializable("selected_sizes");if(savedSizes!=null)sizes.addAll(savedSizes);page=b.getInt("current_page",0);}catch(Exception ignored){page=0;}}startLan();restorePage();}
+ private String myName(){return DeviceIdentity.name(this);}
+ @Override public void onCreate(Bundle b) {
+  super.onCreate(b);
+  getWindow().setStatusBarColor(0xff0a1428);
+  getWindow().setNavigationBarColor(0xff0a1428);
+  nsd = (NsdManager) getSystemService(NSD_SERVICE);
+  requestNotificationPermissionIfNeeded();
+  if (b != null) {
+   try {
+    ArrayList<android.os.Parcelable> saved = b.getParcelableArrayList("selected_uris");
+    if (saved != null) for (android.os.Parcelable item : saved) if (item instanceof Uri) uris.add((Uri) item);
+    ArrayList<String> savedNames = b.getStringArrayList("selected_names");
+    if (savedNames != null) names.addAll(savedNames);
+    ArrayList<Long> savedSizes = (ArrayList<Long>) b.getSerializable("selected_sizes");
+    if (savedSizes != null) sizes.addAll(savedSizes);
+    page = b.getInt("current_page", 0);
+   } catch (Exception ignored) {
+    page = 0;
+   }
+  }
+  registerReceiveReceiver();
+  startLan();
+  restorePage();
+ }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
  private void restorePage(){switch(page){case 1:if(!uris.isEmpty())selectedPage();else home();break;case 2:if(!uris.isEmpty())devicePage();else home();break;case 3:receivePage();break;case 4:historyPage();break;default:home();}}
  @Override public void onConfigurationChanged(android.content.res.Configuration newConfig){super.onConfigurationChanged(newConfig);restorePage();}
@@ -63,9 +85,32 @@ public class MainActivity extends Activity {
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_NOTIFICATIONS&&grantResults.length>0&&grantResults[0]!=android.content.pm.PackageManager.PERMISSION_GRANTED){Toast.makeText(this,"通知权限未开启，传输仍可尝试进行，但系统可能不会正常显示传输通知。",Toast.LENGTH_LONG).show();}}
  private void startLan(){
   ReceiveForegroundService.start(this);
-  startUdpDiscovery();
+  discoveryHandler.post(pruneDevices);
   try{WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);lock=w.createMulticastLock("QuanLianLAN");lock.setReferenceCounted(false);lock.acquire();}catch(Exception ignored){}
+  udpDiscovery=LanDiscovery.listen(announcement->{
+   if(!alive||announcement==null||announcement.host==null||announcement.port<1||myName().equals(announcement.name))return;
+   runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到设备广播，正在验证加密身份…");});
+   workers.execute(()->{
+    String verifyError=LanDiscovery.verifyDetailed(announcement.host,announcement.port,announcement.fingerprint);
+    if(verifyError!=null){
+     android.util.Log.e("QuanLianDiscovery","广播已收到但验证失败：host="+announcement.host.getHostAddress()+", port="+announcement.port+"；"+verifyError);
+     runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("已收到对方广播，但连接验证失败："+verifyError);});
+     return;
+    }
+    runOnUiThread(()->{if(!alive)return; synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
+   });
+  });
   new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive&&nsd!=null)discover();},900);
+  discoveryHandler.postDelayed(()->{if(alive)runActiveLanScan();},1800);
+ }
+ private void runActiveLanScan(){
+  if(!alive)return;
+  int scanPort=port>0?port:38890;
+  workers.execute(()->LanScanner.scan(this,scanPort,announcement->runOnUiThread(()->{
+   if(!alive||announcement==null||announcement.host==null)return;
+   synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}
+   refreshDevices();
+  }),status->runOnUiThread(()->{if(deviceStatus!=null&&alive&&devices.isEmpty())deviceStatus.setText(status);}))); 
  }
  @Override protected void onResume(){super.onResume();registerReceiveReceiver();}
  @Override protected void onPause(){unregisterReceiveReceiver();super.onPause();}
@@ -90,35 +135,8 @@ public class MainActivity extends Activity {
   if(Build.VERSION.SDK_INT>=33)registerReceiver(receiveReceiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiveReceiver,f);
  }
  private void unregisterReceiveReceiver(){if(receiveReceiver!=null){try{unregisterReceiver(receiveReceiver);}catch(Exception ignored){}receiveReceiver=null;}}
- private void startUdpDiscovery(){
-  if(udpThread!=null&&udpThread.isAlive())return;
-  udpRunning=true;
-  udpThread=new Thread(()->{
-   try(DatagramSocket socket=new DatagramSocket(null)){
-    udpSocket=socket;socket.setReuseAddress(true);socket.bind(new InetSocketAddress(38889));socket.setSoTimeout(2000);
-    byte[] buffer=new byte[2048];
-    while(udpRunning){
-     try{
-      DatagramPacket packet=new DatagramPacket(buffer,buffer.length);socket.receive(packet);
-      String raw=new String(packet.getData(),packet.getOffset(),packet.getLength(),"UTF-8");
-      JSONObject json=new JSONObject(raw);
-      if(!"QuanLian".equals(json.optString("app"))||json.optInt("v")!=1)continue;
-      String name=json.optString("name","");int remotePort=json.optInt("port",0);
-      if(name.isEmpty()||name.equals(myName())||remotePort<1||remotePort>65535)continue;
-      InetAddress host=packet.getAddress();if(!(host instanceof Inet4Address))continue;
-      Device device=new Device(name,name,host,remotePort);
-      synchronized(devices){devices.put(device.key,device);}
-      runOnUiThread(()->refreshDevices());
-     }catch(SocketTimeoutException ignored){}
-     catch(Exception ignored){}
-    }
-   }catch(Exception ignored){}
-   finally{udpSocket=null;}
-  },"QuanLian-UDP-Discovery");
-  udpThread.setDaemon(true);udpThread.start();
- }
  private void publish(){
-  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);
+  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));try{info.setAttribute("fp",TlsIdentity.fingerprint());}catch(Exception ignored){}
   registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){discover();}public void onRegistrationFailed(NsdServiceInfo s,int e){runOnUiThread(()->Toast.makeText(MainActivity.this,"设备广播失败",Toast.LENGTH_SHORT).show());}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
   try{nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);}catch(Exception ignored){}
  }
@@ -137,13 +155,19 @@ public class MainActivity extends Activity {
       InetAddress chosen=info.getHost();
       if(Build.VERSION.SDK_INT>=34){try{for(InetAddress candidate:info.getHostAddresses()){if(candidate instanceof Inet4Address){chosen=candidate;break;}if(chosen==null)chosen=candidate;}}catch(Exception ignored){}}
       if(chosen==null||info.getPort()<1)return;
-      Device device=new Device(info.getServiceName(),info.getServiceName(),chosen,info.getPort());
-      synchronized(devices){devices.put(device.key,device);}
-      runOnUiThread(()->refreshDevices());
+      String deviceId=null,fp=null;try{byte[] raw=info.getAttributes().get("id");if(raw!=null)deviceId=new String(raw,java.nio.charset.StandardCharsets.UTF_8);byte[] cert=info.getAttributes().get("fp");if(cert!=null)fp=new String(cert,java.nio.charset.StandardCharsets.UTF_8);}catch(Exception ignored){}
+      if(deviceId==null||deviceId.length()<8)deviceId="nsd:"+info.getServiceName();if(fp==null||!fp.matches("(?i)[0-9a-f]{64}"))return;
+      final String key=deviceId, resolvedName=info.getServiceName(), resolvedFp=fp;
+      final InetAddress resolvedHost=chosen;final int resolvedPort=info.getPort();
+      workers.execute(()->{
+       String error=LanDiscovery.verifyDetailed(resolvedHost,resolvedPort,resolvedFp);
+       if(error!=null){android.util.Log.e("QuanLianDiscovery","NSD 设备未通过连接验证："+resolvedHost+":"+resolvedPort+"；"+error);runOnUiThread(()->{if(alive&&deviceStatus!=null&&devices.isEmpty())deviceStatus.setText("发现设备但连接验证失败："+error);});return;}
+       runOnUiThread(()->{if(!alive)return;synchronized(devices){Device device=devices.get(key);if(device==null){device=new Device(resolvedName,key,resolvedHost,resolvedPort,resolvedFp);devices.put(key,device);}device.name=resolvedName;device.host=resolvedHost;device.port=resolvedPort;device.fingerprint=resolvedFp;device.nsdSeen=true;}refreshDevices();});
+      });
      }
     });}catch(Exception ignored){}
    }
-   public void onServiceLost(NsdServiceInfo service){synchronized(devices){devices.remove(service.getServiceName());}runOnUiThread(()->refreshDevices());}
+   public void onServiceLost(NsdServiceInfo service){synchronized(devices){Iterator<Map.Entry<String,Device>> it=devices.entrySet().iterator();while(it.hasNext()){Device d=it.next().getValue();if(d.name.equals(service.getServiceName())){d.nsdSeen=false;if(!d.udpSeen)it.remove();}}}runOnUiThread(()->refreshDevices());}
    public void onDiscoveryStopped(String type){if(discovery==this)discovery=null;}
    public void onStartDiscoveryFailed(String type,int error){try{nsd.stopServiceDiscovery(this);}catch(Exception ignored){}if(discovery==this)discovery=null;new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive)discover();},2000);}
    public void onStopDiscoveryFailed(String type,int error){try{nsd.stopServiceDiscovery(this);}catch(Exception ignored){}if(discovery==this)discovery=null;new android.os.Handler(getMainLooper()).postDelayed(()->{if(alive)discover();},2000);}
@@ -161,14 +185,16 @@ public class MainActivity extends Activity {
   new android.os.Handler(getMainLooper()).postDelayed(()->{
    if(!alive||nsd==null)return;
    discover();
+   runActiveLanScan();
   },600);
  }
+ private final Runnable pruneDevices=new Runnable(){@Override public void run(){if(!alive)return;long now=android.os.SystemClock.elapsedRealtime();synchronized(devices){Iterator<Map.Entry<String,Device>> it=devices.entrySet().iterator();while(it.hasNext()){Device d=it.next().getValue();if(d.udpSeen&&now-d.udpLastSeen>9000)d.udpSeen=false;if(!d.udpSeen&&!d.nsdSeen)it.remove();}}refreshDevices();discoveryHandler.postDelayed(this,3000);}};
  private void refreshDevices(){
   if(deviceList==null)return;deviceList.removeAllViews();ArrayList<Device> list;
   synchronized(devices){list=new ArrayList<>(devices.values());}
   if(deviceStatus!=null)deviceStatus.setText("发现 "+list.size()+" 台附近设备");
   if(list.isEmpty()){deviceList.addView(txt("暂未发现设备。请让双方打开小李全联并连接同一 Wi-Fi。",14,0xffb7c7de,false));return;}
-  for(Device d:list){LinearLayout item=card();item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(txt(d.name,16,-1,true));labels.addView(txt("局域网在线设备",12,0xffa0c3e6,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));item.addView(txt("发送 ›",15,0xff64beff,true));item.setOnClickListener(v->send(d));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);deviceList.addView(item,p);}
+  for(Device d:list){LinearLayout item=card();item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(txt(d.name,16,-1,true));labels.addView(txt(d.udpSeen?"UDP 验证在线":"NSD 发现设备",12,0xffa0c3e6,false));item.addView(labels,new LinearLayout.LayoutParams(0,-2,1));Button fav=btn("☆",0xff304b70);fav.setTextSize(18);fav.setMinWidth(dp(48));fav.setOnClickListener(v->{FavoriteDevices.add(this,d.name,d.host.getHostAddress(),d.port,d.fingerprint);Toast.makeText(this,"已收藏设备",Toast.LENGTH_SHORT).show();});item.addView(fav);item.addView(txt("发送 ›",15,0xff64beff,true));item.setOnClickListener(v->send(d));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);deviceList.addView(item,p);}
  }
  private void receive(Socket socket){
   try(Socket s=socket;DataInputStream in=new DataInputStream(new BufferedInputStream(s.getInputStream()));DataOutputStream out=new DataOutputStream(new BufferedOutputStream(s.getOutputStream()))){
@@ -193,12 +219,17 @@ public class MainActivity extends Activity {
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
  private void send(Device d){
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
+  if(d.fingerprint==null||!d.fingerprint.matches("(?i)[0-9a-f]{64}")){Toast.makeText(this,"设备没有有效的 TLS 身份证书，已阻止连接",Toast.LENGTH_LONG).show();return;}
+  android.content.SharedPreferences trust=getSharedPreferences("trusted_device_pins",MODE_PRIVATE);
+  String pinned=trust.getString(d.key,null);
+  if(pinned!=null&&!pinned.equalsIgnoreCase(d.fingerprint)){new AlertDialog.Builder(this).setTitle("设备身份验证失败").setMessage("该设备的证书指纹与此前信任的身份不同。为防止设备冒充，已阻止发送。").setPositiveButton("知道了",null).show();return;}
+  if(pinned==null){new AlertDialog.Builder(this).setTitle("首次连接 · 确认设备身份").setMessage("请确认你信任这台接收设备。TLS 证书 SHA-256 指纹：\\n\\n"+d.fingerprint+"\\n\\n确认后会保存此设备身份，后续若证书变化将拒绝连接。").setNegativeButton("取消",null).setPositiveButton("信任并发送",(dialog,which)->{trust.edit().putString(d.key,d.fingerprint).apply();send(d);}).show();return;}
   sendProgress=new ProgressDialog(this);sendProgress.setTitle("小李全联正在发送");sendProgress.setMessage("正在准备文件并计算校验值…");sendProgress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);sendProgress.setMax(1000);sendProgress.setProgress(0);
   sendProgress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->TransferForegroundService.cancelTransfer(this));
   sendProgress.setCancelable(false);sendProgress.show();
   retryDevice=d;
   registerSendReceiver(d);
-  TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name);
+  TransferForegroundService.sendFiles(this,new ArrayList<>(uris),new ArrayList<>(names),d.host.getHostAddress(),d.port,d.name,d.fingerprint);
  }
 
  @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -269,8 +300,31 @@ public class MainActivity extends Activity {
  private void addFile(Uri u){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}String n="文件";long z=-1;try(Cursor c=getContentResolver().query(u,null,null,null,null)){if(c!=null&&c.moveToFirst()){int ni=c.getColumnIndex(OpenableColumns.DISPLAY_NAME),si=c.getColumnIndex(OpenableColumns.SIZE);if(ni>=0)n=c.getString(ni);if(si>=0&&!c.isNull(si))z=c.getLong(si);}}catch(Exception ignored){}uris.add(u);names.add(n);sizes.add(z);}
  private String sizeText(long n){if(n<0)return "大小未知";if(n<1024)return n+" B";if(n<1048576)return String.format(Locale.getDefault(),"%.1f KB",n/1024d);if(n<1073741824)return String.format(Locale.getDefault(),"%.1f MB",n/1048576d);return String.format(Locale.getDefault(),"%.2f GB",n/1073741824d);}
  private void selectedPage(){page=1;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"已选择文件","选择接收设备，开始局域网发送");long total=0;for(long z:sizes)if(z>0)total+=z;l.addView(txt("已选择 "+uris.size()+" 个文件 · "+sizeText(total),15,0xffbed7f2,true));gap(l,12);for(int i=0;i<names.size();i++){LinearLayout c=card();c.addView(txt(names.get(i),15,-1,true));gap(c,4);c.addView(txt(sizeText(sizes.get(i)),12,0xffb7c7de,false));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(8);l.addView(c,p);}Button choose=btn("选择接收设备",0xff1f77dc);choose.setOnClickListener(v->devicePage());l.addView(choose);Button more=btn("继续添加文件",0xff304b70);more.setOnClickListener(v->pick());LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,-2);mp.topMargin=dp(8);l.addView(more,mp);install(l);}
- private void devicePage(){page=2;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"选择接收设备","点击设备名称即可发起文件传输");deviceStatus=txt("正在搜索…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();Button refresh=btn("刷新设备列表",0xff304b70);refresh.setOnClickListener(v->refreshDiscovery());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(10);l.addView(refresh,p);install(l);}
+ private void devicePage(){page=2;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"选择接收设备","点击设备名称即可发起文件传输");deviceStatus=txt("正在搜索…",13,0xffabc6e4,false);l.addView(deviceStatus);gap(l,8);deviceList=new LinearLayout(this);deviceList.setOrientation(LinearLayout.VERTICAL);l.addView(deviceList);refreshDevices();Button refresh=btn("刷新设备列表",0xff304b70);refresh.setOnClickListener(v->refreshDiscovery());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(10);l.addView(refresh,p);
+  Button scan=btn("主动扫描整个局域网",0xff1f77dc);scan.setOnClickListener(v->scanSubnet());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,-2);sp.topMargin=dp(8);l.addView(scan,sp);
+  Button manual=btn("手动输入 IP 连接",0xff1f9e8f);manual.setOnClickListener(v->manualConnect());LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,-2);mp.topMargin=dp(8);l.addView(manual,mp);
+  gap(l,18);l.addView(txt("已收藏设备",18,-1,true));for(FavoriteDevices.Entry entry:FavoriteDevices.list(this)){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=txt(entry.name+"\\n"+entry.host+":"+entry.port,14,-1,false);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button connect=btn("连接",0xff1f77dc);connect.setOnClickListener(v->connectFavorite(entry));row.addView(connect);Button remove=btn("删除",0xff304b70);remove.setOnClickListener(v->{FavoriteDevices.remove(this,entry.host,entry.port);devicePage();});row.addView(remove);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);l.addView(row,rp);}install(l);}
+ private void scanSubnet(){
+  if(deviceStatus!=null)deviceStatus.setText("正在主动扫描局域网 IPv4 地址…");
+  int scanPort=port>0?port:38890;
+  workers.execute(()->LanScanner.scan(this,scanPort,announcement->{
+   if(myName().equals(announcement.name))return;
+   runOnUiThread(()->{if(!alive)return;synchronized(devices){Device d=devices.get(announcement.id);if(d==null){d=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(d.key,d);}d.name=announcement.name;d.host=announcement.host;d.port=announcement.port;d.fingerprint=announcement.fingerprint;d.udpSeen=true;d.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
+  },message->runOnUiThread(()->{if(deviceStatus!=null)deviceStatus.setText(message);})));
+ }
+ private void manualConnect(){
+  LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),dp(8),dp(8),dp(4));
+  EditText host=new EditText(this);host.setSingleLine(true);host.setHint("设备 IP 地址，例如 192.168.1.20");box.addView(host);
+  EditText portInput=new EditText(this);portInput.setSingleLine(true);portInput.setInputType(2);portInput.setHint("端口（默认 38890）");portInput.setText("38890");box.addView(portInput);
+  new AlertDialog.Builder(this).setTitle("手动连接设备").setView(box).setNegativeButton("取消",null).setPositiveButton("验证并连接",(dialog,which)->{
+   String address=host.getText().toString().trim();int targetPort;try{targetPort=Integer.parseInt(portInput.getText().toString().trim());}catch(Exception e){Toast.makeText(this,"端口无效",Toast.LENGTH_SHORT).show();return;}
+   workers.execute(()->{try{InetAddress ip=InetAddress.getByName(address);if(!ip.getHostAddress().equals(address)&&!address.matches("[0-9.]+"))throw new IOException("请输入有效 IPv4 地址");String fp=TlsIdentity.inspectFingerprint(ip.getHostAddress(),targetPort);if(!LanDiscovery.verify(ip,targetPort,fp))throw new IOException("连接验证失败，请检查 IP、端口和对方接收服务");String id="manual:"+ip.getHostAddress()+":"+targetPort;Device d=new Device("手动设备 "+ip.getHostAddress(),id,ip,targetPort,fp);runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("确认设备身份").setMessage("这是首次信任该设备。请核对设备证书指纹：\n\n"+fp+"\n\n信任后将保存指纹，后续连接会验证证书是否一致。").setNegativeButton("取消",null).setPositiveButton("信任并连接",(confirmDialog,confirmWhich)->{synchronized(devices){devices.put(id,d);}getSharedPreferences("trusted_device_pins",MODE_PRIVATE).edit().putString(d.key,fp).apply();FavoriteDevices.add(this,d.name,address,targetPort,fp);refreshDevices();if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已验证并收藏",Toast.LENGTH_LONG).show();}).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
+  }).show();
+ }
+ private void connectFavorite(FavoriteDevices.Entry entry){
+  workers.execute(()->{try{InetAddress ip=InetAddress.getByName(entry.host);if(!LanDiscovery.verify(ip,entry.port,entry.fingerprint))throw new IOException("设备当前不可连接或证书指纹已变化");Device d=new Device(entry.name,"favorite:"+entry.host+":"+entry.port,ip,entry.port,entry.fingerprint);runOnUiThread(()->{synchronized(devices){devices.put(d.key,d);}if(!uris.isEmpty())send(d);else Toast.makeText(this,"设备已连接验证",Toast.LENGTH_SHORT).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"收藏设备连接失败："+e.getMessage(),Toast.LENGTH_LONG).show());}});
+ }
  private void receivePage(){page=3;LinearLayout l=col();l.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff0a1833,0xff0d3052,0xff0a1930}));header(l,"接收文件","打开接收页面，等待附近设备发送");LinearLayout c=card();c.setGravity(Gravity.CENTER_HORIZONTAL);TextView icon=txt("◎",54,0xff46beae,true);icon.setGravity(Gravity.CENTER);c.addView(icon);gap(c,8);c.addView(txt("正在等待连接",20,-1,true));gap(c,8);receiveStatus=txt(port>0?"接收服务已启动 · 端口 "+port:"正在启动接收服务…",13,0xffb7c7de,false);c.addView(receiveStatus);l.addView(c);gap(l,12);LinearLayout note=card();note.addView(txt("使用方法",16,-1,true));gap(note,6);note.addView(txt("发送设备打开小李全联后，会自动发现本设备。发送方点击本机名称后，本机将弹出接收确认。双方需要连接同一 Wi-Fi。",13,0xffb7c7de,false));l.addView(note);install(l);}
- @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;udpRunning=false;if(udpSocket!=null)udpSocket.close();unregisterReceiveReceiver();try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;discoveryHandler.removeCallbacks(pruneDevices);unregisterReceiveReceiver();if(udpDiscovery!=null){udpDiscovery.close();udpDiscovery=null;}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
  @Override public void onBackPressed(){if(page==0)super.onBackPressed();else if(page==1)home();else if(page==2)selectedPage();else if(page==4)home();else home();}
 }
