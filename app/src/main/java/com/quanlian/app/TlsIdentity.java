@@ -19,6 +19,10 @@ import javax.security.auth.x500.X500Principal;
 /** Per-install TLS identity. Peers pin the SHA-256 fingerprint advertised during discovery. */
 public final class TlsIdentity {
     private static final String ALIAS="QuanLian-TLS-Identity";
+    public static final String PREFS="quanlian_diagnostics";
+    public static final String KEY_PLAIN="plain_mode";
+    public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
+    public static String plainFingerprint(){return "0".repeat(64);}
     private TlsIdentity(){}
     private static synchronized KeyStore keyStore() throws Exception {
         KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
@@ -43,9 +47,16 @@ public final class TlsIdentity {
     private static SSLContext context(X509TrustManager trust) throws Exception {
         KeyStore ks=keyStore();KeyManagerFactory kmf=KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());kmf.init(ks,null);
         TrustManager[] managers=trust==null?null:new TrustManager[]{trust};
-        SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(kmf.getKeyManagers(),managers,new SecureRandom());return ctx;
+        SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(kmf.getKeyManagers(),managers,new SecureRandom());
+        android.util.Log.d("QuanLianTLS","SSLContext algorithm="+ctx.getProtocol()+", provider="+ctx.getProvider().getName()+", enabled candidates=TLSv1.3,TLSv1.2");
+        return ctx;
     }
-    public static SSLServerSocket serverSocket(int port) throws Exception {
+    public static ServerSocket serverSocket(Context context,int port) throws Exception {
+        if(plainMode(context)){
+            ServerSocket plain=new ServerSocket();plain.setReuseAddress(true);plain.bind(new InetSocketAddress("0.0.0.0",port));
+            android.util.Log.w("QuanLianPlain","DIAGNOSTIC PLAIN MODE: listening on 0.0.0.0:"+plain.getLocalPort()+" WITHOUT TLS");
+            return plain;
+        }
         SSLServerSocket server=(SSLServerSocket)context(null).getServerSocketFactory().createServerSocket();
         server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",port));
         enableModern(server);return server;
@@ -106,7 +117,16 @@ public final class TlsIdentity {
         throw new java.io.IOException("找不到通往对方 "+peer.getHostAddress()+" 的局域网接口，已阻止错误地走移动数据");
     }
 
-    public static SSLSocket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
+    public static Socket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
+        InetAddress peer=InetAddress.getByName(host);
+        android.util.Log.d("QuanLianSocket","CONNECT begin target="+peer.getHostAddress()+":"+port+", plain="+plainMode(context));
+        if(plainMode(context)){
+            Socket plain=new Socket();
+            try{bindToPeerNetwork(context,plain,peer);plain.connect(new InetSocketAddress(peer,port),8000);plain.setSoTimeout(12000);
+                android.util.Log.w("QuanLianPlain","Connected WITHOUT TLS target="+peer.getHostAddress()+":"+port+", local="+plain.getLocalAddress().getHostAddress());
+                return plain;
+            }catch(Exception e){android.util.Log.e("QuanLianSocket","Plain TCP connect failed target="+peer.getHostAddress()+":"+port,e);try{plain.close();}catch(Exception ignored){}throw e;}
+        }
         if(expectedFingerprint==null||expectedFingerprint.length()!=64)throw new SSLPeerUnverifiedException("缺少设备证书指纹");
         final String expected=expectedFingerprint.replace(":","").toLowerCase(Locale.ROOT);
         X509TrustManager selectedTrust;
@@ -139,6 +159,7 @@ public final class TlsIdentity {
     }
     /** Used only for first-use enrollment; caller must present the fingerprint and obtain user approval. */
     public static String inspectFingerprint(Context context,String host,int port) throws Exception {
+        if(plainMode(context))return plainFingerprint();
         X509TrustManager trustAll=new X509TrustManager(){
             public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
             public void checkClientTrusted(X509Certificate[] c,String a){}
