@@ -1,7 +1,7 @@
 name: Android APK
 on:
   push:
-    branches: [ main, v1.0-development ]
+    branches: [ main, v1.0-development, 'feature/**' ]
   workflow_dispatch:
 permissions:
   contents: read
