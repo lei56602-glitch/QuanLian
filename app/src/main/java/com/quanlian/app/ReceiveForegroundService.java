@@ -117,6 +117,8 @@ public class ReceiveForegroundService extends Service {
                 File tmp;
                 MessageDigest digest=MessageDigest.getInstance("SHA-256");
                 long left=sizes.get(x);
+                String completedKey=Integer.toHexString(senderId.hashCode())+"_"+hashes.get(x).toLowerCase(Locale.ROOT);
+                if(resumable&&getSharedPreferences("completed_incoming",MODE_PRIVATE).getBoolean(completedKey,false)){out.writeLong(sizes.get(x));out.flush();continue;}
                 if(resumable){
                     tmp=new File(dir,".quanlian_"+Integer.toHexString(senderId.hashCode())+"_"+hashes.get(x).toLowerCase(Locale.ROOT)+".part");
                     if(tmp.exists()&&tmp.length()>left)tmp.delete();
@@ -133,7 +135,7 @@ public class ReceiveForegroundService extends Service {
                 }
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
                 Uri saved;try{saved=saveFile(tmp,safe);}finally{if(tmp.exists())tmp.delete();}if(saved==null)throw new IOException("无法保存文件："+safe);
-                addHistory(safe,sizes.get(x),sender,saved.toString());broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
+                addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
         }catch(Exception e){broadcastStatus("接收失败："+e.getMessage(),port());}
