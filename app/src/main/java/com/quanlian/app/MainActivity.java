@@ -181,7 +181,6 @@ public class MainActivity extends Activity {
   String pinned=trust.getString(d.key,null);
   if(pinned!=null&&!pinned.equalsIgnoreCase(d.fingerprint)){new AlertDialog.Builder(this).setTitle("设备身份验证失败").setMessage("该设备的证书指纹与此前信任的身份不同。为防止设备冒充，已阻止发送。").setPositiveButton("知道了",null).show();return;}
   if(pinned==null){new AlertDialog.Builder(this).setTitle("首次连接 · 确认设备身份").setMessage("请确认你信任这台接收设备。TLS 证书 SHA-256 指纹：\\n\\n"+d.fingerprint+"\\n\\n确认后会保存此设备身份，后续若证书变化将拒绝连接。").setNegativeButton("取消",null).setPositiveButton("信任并发送",(dialog,which)->{trust.edit().putString(d.key,d.fingerprint).apply();send(d);}).show();return;}
-  if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   sendProgress=new ProgressDialog(this);sendProgress.setTitle("小李全联正在发送");sendProgress.setMessage("正在准备文件并计算校验值…");sendProgress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);sendProgress.setMax(1000);sendProgress.setProgress(0);
   sendProgress.setButton(ProgressDialog.BUTTON_NEGATIVE,"取消",(dialog,which)->TransferForegroundService.cancelTransfer(this));
   sendProgress.setCancelable(false);sendProgress.show();
