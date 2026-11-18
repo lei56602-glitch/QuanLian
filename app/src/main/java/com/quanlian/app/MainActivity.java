@@ -83,7 +83,8 @@ public class MainActivity extends Activity {
  }
  private void runActiveLanScan(){
   if(!alive)return;
-  int scanPort=port>0?port:38890;\n  workers.execute(()->LanScanner.scan(this,scanPort,announcement->runOnUiThread(()->{
+  int scanPort=port>0?port:38890;
+  workers.execute(()->LanScanner.scan(this,scanPort,announcement->runOnUiThread(()->{
    if(!alive||announcement==null||announcement.host==null)return;
    synchronized(devices){Device device=devices.get(announcement.id);if(device==null){device=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(device.key,device);}device.name=announcement.name;device.host=announcement.host;device.port=announcement.port;device.fingerprint=announcement.fingerprint;device.udpSeen=true;device.udpLastSeen=android.os.SystemClock.elapsedRealtime();}
    refreshDevices();
@@ -279,7 +280,8 @@ public class MainActivity extends Activity {
   gap(l,18);l.addView(txt("已收藏设备",18,-1,true));for(FavoriteDevices.Entry entry:FavoriteDevices.list(this)){LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView label=txt(entry.name+"\\n"+entry.host+":"+entry.port,14,-1,false);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));Button connect=btn("连接",0xff1f77dc);connect.setOnClickListener(v->connectFavorite(entry));row.addView(connect);Button remove=btn("删除",0xff304b70);remove.setOnClickListener(v->{FavoriteDevices.remove(this,entry.host,entry.port);devicePage();});row.addView(remove);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);l.addView(row,rp);}install(l);}
  private void scanSubnet(){
   if(deviceStatus!=null)deviceStatus.setText("正在主动扫描局域网 IPv4 地址…");
-  int scanPort=port>0?port:38890;\n  workers.execute(()->LanScanner.scan(this,scanPort,announcement->{
+  int scanPort=port>0?port:38890;
+  workers.execute(()->LanScanner.scan(this,scanPort,announcement->{
    if(myName().equals(announcement.name))return;
    runOnUiThread(()->{if(!alive)return;synchronized(devices){Device d=devices.get(announcement.id);if(d==null){d=new Device(announcement.name,announcement.id,announcement.host,announcement.port,announcement.fingerprint);devices.put(d.key,d);}d.name=announcement.name;d.host=announcement.host;d.port=announcement.port;d.fingerprint=announcement.fingerprint;d.udpSeen=true;d.udpLastSeen=android.os.SystemClock.elapsedRealtime();}refreshDevices();});
   },message->runOnUiThread(()->{if(deviceStatus!=null)deviceStatus.setText(message);})));
