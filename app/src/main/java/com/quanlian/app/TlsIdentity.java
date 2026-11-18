@@ -11,6 +11,7 @@ import android.security.keystore.KeyProperties;
 import java.io.*;
 import java.net.*;
 import java.security.*;
+import java.security.spec.ECGenParameterSpec;
 import java.security.cert.*;
 import java.util.*;
 import javax.net.ssl.*;
@@ -18,7 +19,9 @@ import javax.security.auth.x500.X500Principal;
 
 /** Per-install TLS identity. Peers pin the SHA-256 fingerprint advertised during discovery. */
 public final class TlsIdentity {
-    private static final String ALIAS="QuanLian-TLS-Identity";
+    // Versioned EC identity avoids the RSA/AndroidKeyStore TLS signing failure
+    // observed on some Android 17 devices. Existing RSA aliases are left untouched.
+    private static final String ALIAS="QuanLian-TLS-Identity-EC-v2";
     public static final String PREFS="quanlian_diagnostics";
     public static final String KEY_PLAIN="plain_mode";
     public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
@@ -27,10 +30,13 @@ public final class TlsIdentity {
     private static synchronized KeyStore keyStore() throws Exception {
         KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
         if(!ks.containsAlias(ALIAS)){
-            KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA,"AndroidKeyStore");
+            // Use P-256 ECDSA for the device certificate and TLS server signatures.
+            // The previous AndroidKeyStore RSA identity triggered Conscrypt's
+            // "RSA routines: OPENSSL_internal:internal error" during server handshake.
+            KeyPairGenerator gen=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC,"AndroidKeyStore");
             gen.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
-                .setKeySize(2048).setDigests(KeyProperties.DIGEST_SHA256)
-                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,KeyProperties.SIGNATURE_PADDING_RSA_PSS)
+                .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
+                .setDigests(KeyProperties.DIGEST_SHA256)
                 .setCertificateSubject(new X500Principal("CN=QuanLian Device"))
                 .setCertificateSerialNumber(new java.math.BigInteger(64,new SecureRandom()))
                 .setCertificateNotBefore(new Date(System.currentTimeMillis()-86400000L))
