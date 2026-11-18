@@ -19,8 +19,8 @@
         android:banner="@drawable/tv_banner"
         android:allowBackup="true"
         android:label="小李全联"
-        android:icon="@drawable/ic_launcher_custom"
-        android:roundIcon="@drawable/ic_launcher_custom"
+        android:icon="@drawable/ic_launcher_sync"
+        android:roundIcon="@drawable/ic_launcher_sync"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:resizeableActivity="true"
         android:usesCleartextTraffic="true">
