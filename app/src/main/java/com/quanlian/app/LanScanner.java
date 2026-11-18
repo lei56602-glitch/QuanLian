@@ -17,7 +17,7 @@ public final class LanScanner {
 
     public static void scan(Context context, int port,
             Consumer<LanDiscovery.Announcement> found, Consumer<String> status) {
-        port = ReceiveForegroundService.DEFAULT_PORT;
+        final int targetPort = ReceiveForegroundService.DEFAULT_PORT;
         ExecutorService pool = Executors.newFixedThreadPool(32);
         try {
             Set<Integer> targets = collectTargets(context, status);
@@ -34,12 +34,12 @@ public final class LanScanner {
                             (byte)(candidate >>> 24), (byte)(candidate >>> 16),
                             (byte)(candidate >>> 8), (byte)candidate
                         });
-                        String fp = TlsIdentity.inspectFingerprint(address.getHostAddress(), port);
-                        if (LanDiscovery.verify(address, port, fp)) {
-                            String id = "manual:" + address.getHostAddress() + ":" + port;
+                        String fp = TlsIdentity.inspectFingerprint(address.getHostAddress(), targetPort);
+                        if (LanDiscovery.verify(address, targetPort, fp)) {
+                            String id = "manual:" + address.getHostAddress() + ":" + targetPort;
                             found.accept(new LanDiscovery.Announcement(id,
                                 "小李全联设备 " + address.getHostAddress(),
-                                fp, address, port));
+                                fp, address, targetPort));
                         }
                     } catch (Exception ignored) {
                     } finally {
