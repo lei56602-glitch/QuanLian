@@ -317,6 +317,7 @@ public class MainActivity extends Activity {
  }
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
  private void send(Device d){
+  if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   if(!batchSending&&"multiple".equals(getSharedPreferences("ui_settings",MODE_PRIVATE).getString("send_mode","single"))){
    String saved=getSharedPreferences("ui_settings",MODE_PRIVATE).getString("selected_receivers","");
    if(saved!=null&&!saved.trim().isEmpty()){
@@ -326,7 +327,6 @@ public class MainActivity extends Activity {
    }
   }
   DiagnosticLog.info(this,"SEND_SELECTED","peer="+d.name+", id="+d.key+", target="+d.host.getHostAddress()+":"+d.port+", fingerprint="+d.fingerprint);
-  if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   if(d.fingerprint==null||!d.fingerprint.matches("(?i)[0-9a-f]{64}")){Toast.makeText(this,"设备没有有效的 TLS 身份证书，已阻止连接",Toast.LENGTH_LONG).show();return;}
   android.content.SharedPreferences trust=getSharedPreferences("trusted_device_pins",MODE_PRIVATE);
   String pinned=trust.getString(d.key,null);
