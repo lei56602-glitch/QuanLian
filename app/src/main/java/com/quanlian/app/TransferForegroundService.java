@@ -194,7 +194,7 @@ public class TransferForegroundService extends Service {
                 updateStatus("已连接设备，正在等待对方确认…", 0);
                 DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
                 DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-                out.writeUTF("QUANLIAN2"); out.writeUTF(deviceName()); out.writeInt(files.size());
+                out.writeUTF("QUANLIAN3"); out.writeUTF(deviceName()); out.writeInt(files.size());
                 for (SendFile file : files) { out.writeUTF(file.name); out.writeLong(file.size); out.writeUTF(file.hash); }
                 out.flush();
                 if (!in.readBoolean()) throw new IOException("对方拒绝接收或接收确认超时");
@@ -203,21 +203,27 @@ public class TransferForegroundService extends Service {
                 for (SendFile file : files) {
                     index++;
                     updateStatus("正在发送第 " + index + "/" + files.size() + " 个文件：" + file.name, totalBytes==0?0:(int)(sent*1000/totalBytes));
+                    long offset=in.readLong();
+                    if(offset<0||offset>file.size)throw new IOException("接收端续传位置无效");
+                    sent+=offset;
                     try (InputStream input = new BufferedInputStream(new FileInputStream(file.file))) {
-                        int n;
-                        while ((n=input.read(buffer))!=-1) {
-                            if (cancelRequested.get()) throw new IOException("已取消发送");
-                            out.write(buffer,0,n); sent += n;
+                        long skipped=0;while(skipped<offset){long n=input.skip(offset-skipped);if(n<=0){if(input.read()==-1)throw new EOFException("无法定位续传位置");n=1;}skipped+=n;}
+                        byte[] chunk=new byte[1024*1024];
+                        long remainingFile=file.size-offset;
+                        while(remainingFile>0){
+                            if(cancelRequested.get())throw new IOException("已取消发送");
+                            int wanted=(int)Math.min(chunk.length,remainingFile),n=0;
+                            while(n<wanted){int read=input.read(chunk,n,wanted-n);if(read<0)throw new EOFException("本地文件读取中断");n+=read;}
+                            out.writeInt(n);out.write(chunk,0,n);out.flush();
+                            long ack=in.readLong();if(ack!=offset+n)throw new IOException("接收端数据块确认不一致");
+                            offset=ack;remainingFile-=n;sent+=n;
                             long now=System.currentTimeMillis();
-                            if (now-lastUi>250 || sent==totalBytes) {
+                            if(now-lastUi>250||sent==totalBytes){
                                 int progress=totalBytes==0?1000:(int)Math.min(1000,(sent*1000.0/totalBytes));
-                                long elapsed=Math.max(1,now-started), speed=(long)(sent*1000.0/elapsed);
-                                long remaining=speed>0?(totalBytes-sent)/speed:0;
-                                updateStatus("正在发送：" + sizeText(sent) + " / " + sizeText(totalBytes) + " · " + sizeText(speed) + "/秒 · 剩余约 " + etaText(remaining), progress);
-                                lastUi=now;
+                                long elapsed=Math.max(1,now-started),speed=(long)(sent*1000.0/elapsed),remaining=speed>0?(totalBytes-sent)/speed:0;
+                                updateStatus("正在发送："+sizeText(sent)+" / "+sizeText(totalBytes)+" · "+sizeText(speed)+"/秒 · 剩余约 "+etaText(remaining),progress);lastUi=now;
                             }
                         }
-                        out.flush();
                     }
                 }
                 if (!in.readBoolean()) throw new IOException("接收端未确认完成或文件校验失败");
