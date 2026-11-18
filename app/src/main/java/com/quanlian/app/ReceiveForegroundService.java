@@ -73,7 +73,7 @@ public class ReceiveForegroundService extends Service {
     }
     private void listen(){
         try{
-            server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",0));
+            server=new ServerSocket();server.setReuseAddress(true);try{server.bind(new InetSocketAddress("0.0.0.0",38890));}catch(BindException occupied){server.bind(new InetSocketAddress("0.0.0.0",0));}
             int port=server.getLocalPort();publish(port);startUdpAnnouncing(port);
             Intent status=new Intent(ACTION_STATUS).setPackage(getPackageName());status.putExtra(EXTRA_PORT,port);status.putExtra(EXTRA_TEXT,"接收服务已启动 · 端口 "+port);sendBroadcast(status);
             while(running){Socket s=server.accept();s.setSoTimeout(180000);s.setTcpNoDelay(true);activeSockets.add(s);clients.execute(()->{try{receive(s);}finally{activeSockets.remove(s);}});}
