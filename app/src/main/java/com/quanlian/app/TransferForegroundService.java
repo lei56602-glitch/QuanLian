@@ -285,6 +285,7 @@ public class TransferForegroundService extends Service {
     }
 
     private void addHistory(String direction,String name,long size,String peer,String uri) {
+        if(!getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("save_history",true))return;
         try {
             android.content.SharedPreferences prefs=getSharedPreferences("transfer_history",MODE_PRIVATE);
             JSONArray old=new JSONArray(prefs.getString("items","[]")), next=new JSONArray();
