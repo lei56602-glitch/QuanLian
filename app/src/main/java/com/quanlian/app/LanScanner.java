@@ -40,7 +40,7 @@ public final class LanScanner {
                     }catch(Exception ignored){}finally{done.countDown();}
                 });
             }
-            done.await(12,TimeUnit.SECONDS);
+            done.await(25,TimeUnit.SECONDS);
             status.accept("主动扫描完成");
         }catch(Exception e){status.accept("主动扫描失败："+e.getMessage());}
         finally{pool.shutdownNow();}
