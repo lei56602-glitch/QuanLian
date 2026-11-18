@@ -1,5 +1,11 @@
 package com.quanlian.app;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.RouteInfo;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import java.io.*;
@@ -44,7 +50,63 @@ public final class TlsIdentity {
         server.setReuseAddress(true);server.bind(new InetSocketAddress("0.0.0.0",port));
         enableModern(server);return server;
     }
-    public static SSLSocket connect(String host,int port,String expectedFingerprint) throws Exception {
+    /**
+     * Bind an unconnected TCP socket to the Android Network whose route reaches
+     * the peer. If Android does not expose that route (common on SoftAP hosts),
+     * bind to the local IPv4 address on the interface sharing the peer subnet.
+     * Never silently fall back to the mobile-data default route.
+     */
+    private static void bindToPeerNetwork(Context context, Socket socket, InetAddress peer) throws Exception {
+        ConnectivityManager cm=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network best=null;
+        int bestScore=Integer.MIN_VALUE;
+        if(cm!=null){
+            Network[] networks=cm.getAllNetworks();
+            for(Network network:networks){
+                LinkProperties lp=cm.getLinkProperties(network);
+                if(lp==null)continue;
+                NetworkCapabilities caps=cm.getNetworkCapabilities(network);
+                for(RouteInfo route:lp.getRoutes()){
+                    if(route.matches(peer)){
+                        int prefix=route.getDestination()==null?0:route.getDestination().getPrefixLength();
+                        int score=prefix*10+(caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)?5:0);
+                        if(score>bestScore){best=network;bestScore=score;}
+                    }
+                }
+            }
+        }
+        if(best!=null){
+            best.bindSocket(socket);
+            android.util.Log.i("QuanLianNetwork","Bound TCP socket to Android Network for peer "+peer.getHostAddress());
+            return;
+        }
+        // SoftAP owner devices may expose the AP interface but not a Network route.
+        Enumeration<NetworkInterface> interfaces=NetworkInterface.getNetworkInterfaces();
+        while(interfaces!=null&&interfaces.hasMoreElements()){
+            NetworkInterface ni=interfaces.nextElement();
+            try{if(!ni.isUp()||ni.isLoopback())continue;}catch(Exception e){continue;}
+            for(InterfaceAddress entry:ni.getInterfaceAddresses()){
+                InetAddress local=entry.getAddress();
+                if(!(local instanceof Inet4Address)||!(peer instanceof Inet4Address))continue;
+                int prefix=entry.getNetworkPrefixLength();
+                if(prefix<1||prefix>32)continue;
+                byte[] a=local.getAddress(),b=peer.getAddress();
+                boolean same=true;
+                for(int bit=0;bit<prefix;bit++){
+                    int mask=1<<(7-(bit%8));
+                    if((a[bit/8]&mask)!=(b[bit/8]&mask)){same=false;break;}
+                }
+                if(same){
+                    socket.bind(new InetSocketAddress(local,0));
+                    android.util.Log.i("QuanLianNetwork","Bound TCP socket to "+ni.getName()+" / "+local.getHostAddress()+" for peer "+peer.getHostAddress());
+                    return;
+                }
+            }
+        }
+        throw new java.io.IOException("找不到通往对方 "+peer.getHostAddress()+" 的局域网接口，已阻止错误地走移动数据");
+    }
+
+    public static SSLSocket connect(Context context,String host,int port,String expectedFingerprint) throws Exception {
         if(expectedFingerprint==null||expectedFingerprint.length()!=64)throw new SSLPeerUnverifiedException("缺少设备证书指纹");
         final String expected=expectedFingerprint.replace(":","").toLowerCase(Locale.ROOT);
         X509TrustManager pin=new X509TrustManager(){
@@ -57,11 +119,11 @@ public final class TlsIdentity {
             }
         };
         SSLSocket socket=(SSLSocket)context(pin).getSocketFactory().createSocket();
-        try{socket.connect(new InetSocketAddress(host,port),8000);socket.setSoTimeout(12000);enableModern(socket);socket.startHandshake();return socket;}
+        try{InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),8000);socket.setSoTimeout(12000);enableModern(socket);socket.startHandshake();return socket;}
         catch(Exception e){try{socket.close();}catch(Exception ignored){}throw e;}
     }
     /** Used only for first-use enrollment; caller must present the fingerprint and obtain user approval. */
-    public static String inspectFingerprint(String host,int port) throws Exception {
+    public static String inspectFingerprint(Context context,String host,int port) throws Exception {
         X509TrustManager trustAll=new X509TrustManager(){
             public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
             public void checkClientTrusted(X509Certificate[] c,String a){}
@@ -69,7 +131,7 @@ public final class TlsIdentity {
         };
         SSLContext ctx=SSLContext.getInstance("TLS");ctx.init(null,new TrustManager[]{trustAll},new SecureRandom());
         try(SSLSocket socket=(SSLSocket)ctx.getSocketFactory().createSocket()){
-            socket.connect(new InetSocketAddress(host,port),2500);socket.setSoTimeout(4000);enableModern(socket);socket.startHandshake();
+            InetAddress peer=InetAddress.getByName(host);bindToPeerNetwork(context,socket,peer);socket.connect(new InetSocketAddress(peer,port),2500);socket.setSoTimeout(4000);enableModern(socket);socket.startHandshake();
             java.security.cert.Certificate[] chain=socket.getSession().getPeerCertificates();return hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
         }
     }

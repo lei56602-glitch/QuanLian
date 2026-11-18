@@ -1,6 +1,7 @@
 package com.quanlian.app;
 
 import android.util.Log;
+import android.content.Context;
 import org.json.JSONObject;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -79,16 +80,16 @@ public final class LanDiscovery {
 
  public static Listener listen(Consumer<Announcement> callback){return new Listener(callback);}
 
- public static boolean verify(InetAddress host,int port,String fingerprint){
-  return verifyDetailed(host,port,fingerprint)==null;
+ public static boolean verify(Context context,InetAddress host,int port,String fingerprint){
+  return verifyDetailed(context,host,port,fingerprint)==null;
  }
 
  /** Returns null on success, otherwise a stage-specific diagnostic for the UI and Logcat. */
- public static String verifyDetailed(InetAddress host,int port,String fingerprint){
+ public static String verifyDetailed(Context context,InetAddress host,int port,String fingerprint){
   if(host==null)return "对方 IP 地址为空";
   if(port<1||port>65535)return "对方公布的 TCP 端口无效："+port;
   if(fingerprint==null||!fingerprint.matches("(?i)[0-9a-f]{64}"))return "广播中的证书指纹格式无效";
-  try(javax.net.ssl.SSLSocket s=TlsIdentity.connect(host.getHostAddress(),port,fingerprint)){
+  try(javax.net.ssl.SSLSocket s=TlsIdentity.connect(context,host.getHostAddress(),port,fingerprint)){
    try{
     DataOutputStream out=new DataOutputStream(s.getOutputStream());DataInputStream in=new DataInputStream(s.getInputStream());
     out.writeUTF(PROBE);out.flush();

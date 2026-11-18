@@ -183,7 +183,7 @@ public class TransferForegroundService extends Service {
             }
             if (cancelRequested.get()) throw new IOException("已取消发送");
             updateStatus("文件准备完成，正在连接 " + peer + "…", 0);
-            try (javax.net.ssl.SSLSocket socket = TlsIdentity.connect(host,port,fingerprint)) {
+            try (javax.net.ssl.SSLSocket socket = TlsIdentity.connect(this,host,port,fingerprint)) {
                 activeSocket.set(socket);
                 socket.setSoTimeout(180000); socket.setTcpNoDelay(true); socket.setKeepAlive(true);
                 updateStatus("已连接设备，正在等待对方确认…", 0);

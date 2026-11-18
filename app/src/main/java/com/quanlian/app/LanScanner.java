@@ -34,8 +34,8 @@ public final class LanScanner {
                             (byte)(candidate >>> 24), (byte)(candidate >>> 16),
                             (byte)(candidate >>> 8), (byte)candidate
                         });
-                        String fp = TlsIdentity.inspectFingerprint(address.getHostAddress(), targetPort);
-                        if (LanDiscovery.verify(address, targetPort, fp)) {
+                        String fp = TlsIdentity.inspectFingerprint(context, address.getHostAddress(), targetPort);
+                        if (LanDiscovery.verify(context, address, targetPort, fp)) {
                             String id = "manual:" + address.getHostAddress() + ":" + targetPort;
                             found.accept(new LanDiscovery.Announcement(id,
                                 "小李全联设备 " + address.getHostAddress(),
