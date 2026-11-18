@@ -37,6 +37,8 @@ public class MainActivity extends Activity {
  private final ArrayList<String> names=new ArrayList<>();
  private final ArrayList<Long> sizes=new ArrayList<>();
  private final Map<String,Device> devices=new LinkedHashMap<>();
+ private final ArrayDeque<Device> pendingRecipients=new ArrayDeque<>();
+ private boolean batchSending=false;
  private final ExecutorService workers=Executors.newCachedThreadPool();
  private NsdManager nsd; private NsdManager.RegistrationListener registration; private LanDiscovery.Listener udpDiscovery;
  private NsdManager.DiscoveryListener discovery; private WifiManager.MulticastLock lock; private final android.os.Handler discoveryHandler=new android.os.Handler(android.os.Looper.getMainLooper());
@@ -263,6 +265,14 @@ public class MainActivity extends Activity {
  }
  private static class TransferFile { File file; String name,hash; long size; TransferFile(File f,String n,long z,String h){file=f;name=n;size=z;hash=h;} }
  private void send(Device d){
+  if(!batchSending&&"multiple".equals(getSharedPreferences("ui_settings",MODE_PRIVATE).getString("send_mode","single"))){
+   String saved=getSharedPreferences("ui_settings",MODE_PRIVATE).getString("selected_receivers","");
+   if(saved!=null&&!saved.trim().isEmpty()){
+    ArrayList<Device> targets=new ArrayList<>();Set<String> keys=new HashSet<>(Arrays.asList(saved.split(",")));
+    synchronized(devices){for(Device candidate:devices.values())if(keys.contains(candidate.key))targets.add(candidate);}
+    if(!targets.isEmpty()){startBatchSend(targets);return;}
+   }
+  }
   DiagnosticLog.info(this,"SEND_SELECTED","peer="+d.name+", id="+d.key+", target="+d.host.getHostAddress()+":"+d.port+", fingerprint="+d.fingerprint);
   if(uris.isEmpty()){Toast.makeText(this,"请先选择文件",Toast.LENGTH_SHORT).show();return;}
   if(d.fingerprint==null||!d.fingerprint.matches("(?i)[0-9a-f]{64}")){Toast.makeText(this,"设备没有有效的 TLS 身份证书，已阻止连接",Toast.LENGTH_LONG).show();return;}
@@ -295,9 +305,14 @@ public class MainActivity extends Activity {
      String error=intent.getStringExtra(TransferForegroundService.EXTRA_ERROR);
      if(sendProgress!=null){sendProgress.dismiss();sendProgress=null;}
      unregisterSendReceiver();
-     if(success){uris.clear();names.clear();sizes.clear();retryDevice=null;page=0;home();Toast.makeText(MainActivity.this,"发送成功："+target.name+"，已完成传输并清空待发送列表",Toast.LENGTH_LONG).show();}
-     else if(cancelled)Toast.makeText(MainActivity.this,"已取消发送",Toast.LENGTH_SHORT).show();
-     else {DiagnosticLog.error(MainActivity.this,"SEND_RESULT_FAILED",new Exception(error==null?"传输中断":error));new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
+     if(success){
+      if(batchSending&&!pendingRecipients.isEmpty()){
+       Device next=pendingRecipients.removeFirst();Toast.makeText(MainActivity.this,"已发送到 "+target.name+"，正在发送下一台设备",Toast.LENGTH_SHORT).show();send(next);return;
+      }
+      batchSending=false;pendingRecipients.clear();uris.clear();names.clear();sizes.clear();retryDevice=null;page=0;home();Toast.makeText(MainActivity.this,"发送成功："+target.name+"，全部传输任务已完成",Toast.LENGTH_LONG).show();
+     }
+     else if(cancelled){batchSending=false;pendingRecipients.clear();Toast.makeText(MainActivity.this,"已取消发送",Toast.LENGTH_SHORT).show();}
+     else {batchSending=false;pendingRecipients.clear();DiagnosticLog.error(MainActivity.this,"SEND_RESULT_FAILED",new Exception(error==null?"传输中断":error));new AlertDialog.Builder(MainActivity.this).setTitle("发送失败").setMessage(error==null?"传输中断":error).setNegativeButton("关闭",null).setPositiveButton("重新发送",(dialog,which)->send(target)).show();
     }
    }
   }
@@ -520,6 +535,13 @@ public class MainActivity extends Activity {
     else{getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("send_mode","connection").apply();manualConnect();}
    }).setNegativeButton("取消",null).show();
   }
+  private void startBatchSend(ArrayList<Device> targets){
+   if(targets==null||targets.isEmpty())return;
+   pendingRecipients.clear();pendingRecipients.addAll(targets);batchSending=true;
+   Device first=pendingRecipients.removeFirst();
+   Toast.makeText(this,"开始依次发送到 "+targets.size()+" 台设备",Toast.LENGTH_SHORT).show();
+   send(first);
+  }
   private void showMultipleReceiverSelection(){
    ArrayList<Device> list; synchronized(devices){list=new ArrayList<>(devices.values());}
    if(list.isEmpty()){Toast.makeText(this,"暂未发现附近设备",Toast.LENGTH_SHORT).show();return;}
@@ -527,9 +549,12 @@ public class MainActivity extends Activity {
    for(int i=0;i<list.size();i++)labels[i]=list.get(i).name;
    new AlertDialog.Builder(this).setTitle("选择多个接收者").setMultiChoiceItems(labels,checked,(d,which,on)->checked[which]=on)
     .setNegativeButton("取消",null).setPositiveButton("完成",(d,w)->{
-     ArrayList<String> selected=new ArrayList<>();for(int i=0;i<checked.length;i++)if(checked[i])selected.add(list.get(i).key);
+     ArrayList<Device> selectedDevices=new ArrayList<>();ArrayList<String> selected=new ArrayList<>();
+     for(int i=0;i<checked.length;i++)if(checked[i]){selected.add(list.get(i).key);selectedDevices.add(list.get(i));}
      getSharedPreferences("ui_settings",MODE_PRIVATE).edit().putString("selected_receivers",android.text.TextUtils.join(",",selected)).apply();
-     Toast.makeText(this,"已选择 "+selected.size()+" 个接收设备。请继续完善批量发送队列后再执行发送。",Toast.LENGTH_LONG).show();
+     if(selectedDevices.isEmpty()){Toast.makeText(this,"没有选择接收设备",Toast.LENGTH_SHORT).show();return;}
+     if(!uris.isEmpty())startBatchSend(selectedDevices);
+     else Toast.makeText(this,"已保存 "+selectedDevices.size()+" 个接收设备；添加文件后点击附近设备即可依次发送",Toast.LENGTH_LONG).show();
     }).show();
   }
   private void showFavorites(){List<FavoriteDevices.Entry> list=FavoriteDevices.list(this);if(list.isEmpty()){Toast.makeText(this,"还没有收藏设备",Toast.LENGTH_SHORT).show();return;}String[] labels=new String[list.size()];for(int i=0;i<list.size();i++)labels[i]=list.get(i).name;new AlertDialog.Builder(this).setTitle("收藏设备").setItems(labels,(d,which)->connectFavorite(list.get(which))).setNegativeButton("关闭",null).show();}
