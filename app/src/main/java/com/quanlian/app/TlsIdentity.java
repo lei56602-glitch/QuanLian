@@ -43,7 +43,7 @@ public final class TlsIdentity {
     }
     public static ServerSocket serverSocket(Context context,int port) throws Exception {
         if(plainMode(context)){
-            ServerSocket plain=new ServerSocket();plain.setReuseAddress(true);plain.bind(new InetSocketAddress("0.0.0.0",port));
+            ServerSocket plain=new ServerSocket();plain.setReuseAddress(true);plain.setReceiveBufferSize(4*1024*1024);plain.bind(new InetSocketAddress("0.0.0.0",port));
             android.util.Log.w("QuanLianPlain","DIAGNOSTIC PLAIN MODE: listening on 0.0.0.0:"+plain.getLocalPort()+" WITHOUT TLS");
             return plain;
         }
