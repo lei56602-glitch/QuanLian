@@ -137,7 +137,9 @@ public class ReceiveForegroundService extends Service {
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
             DiagnosticLog.info(this,"INCOMING_REQUEST_READY","sender="+sender+", files="+count+", bytes="+total );
             android.util.Log.i("QuanLianReceive","Valid transfer request from "+sender+"; files="+count+", bytes="+total+"; waiting for user decision");
-            Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);
+            boolean autoAccept=getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("auto_complete",false);
+            if(autoAccept){request.accepted=true;request.latch.countDown();DiagnosticLog.info(this,"INCOMING_AUTO_ACCEPTED","sender="+sender+", files="+count);}
+            else{Intent event=new Intent(ACTION_INCOMING).setPackage(getPackageName());event.putExtra(EXTRA_ID,request.id);event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,count);event.putExtra(EXTRA_TOTAL,total);sendBroadcast(event);}
             boolean accepted=request.latch.await(90,TimeUnit.SECONDS)&&request.accepted;
             pendingRequests.remove(request.id);
             out.writeBoolean(accepted);out.flush();if(!accepted)return;
@@ -192,20 +194,55 @@ public class ReceiveForegroundService extends Service {
     }
     private int port(){return server==null?-1:server.getLocalPort();}
     private Uri saveFile(File src,String name)throws Exception{
+        android.content.SharedPreferences prefs=getSharedPreferences("ui_settings",MODE_PRIVATE);
+        boolean autoSave=prefs.getBoolean("auto_save",true);
+        String mime=java.net.URLConnection.guessContentTypeFromName(name);
+        if(mime==null)mime="application/octet-stream";
+        if(!autoSave){
+            File dir=new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),"小李全联");
+            if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建应用内接收目录");
+            File target=new File(dir,System.currentTimeMillis()+"_"+name);
+            try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){copy(in,out);}
+            return Uri.fromFile(target);
+        }
+        String customTree=prefs.getString("save_tree_uri","");
+        if(customTree!=null&&!customTree.isEmpty()){
+            Uri tree=Uri.parse(customTree);
+            Uri target=android.provider.DocumentsContract.createDocument(getContentResolver(),tree,mime,name);
+            if(target==null)throw new IOException("无法在自定义目录创建文件");
+            try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){
+                if(out==null)throw new IOException("无法写入自定义保存目录");copy(in,out);
+            }catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
+            return target;
+        }
+        boolean saveAlbum=prefs.getBoolean("save_to_album",true);
+        if(Build.VERSION.SDK_INT>=29&&saveAlbum&&(mime.startsWith("image/")||mime.startsWith("video/"))){
+            boolean image=mime.startsWith("image/");
+            Uri collection=image?MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY):MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+            ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH,(image?Environment.DIRECTORY_PICTURES:Environment.DIRECTORY_MOVIES)+"/小李全联");values.put(MediaStore.MediaColumns.IS_PENDING,1);
+            Uri target=getContentResolver().insert(collection,values);if(target==null)throw new IOException("无法保存到系统相册");
+            try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){if(out==null)throw new IOException("无法写入系统相册");copy(in,out);}
+            catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
+            values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(target,values,null,null);return target;
+        }
         if(Build.VERSION.SDK_INT>=29){
-            ContentValues v=new ContentValues();v.put(MediaStore.MediaColumns.DISPLAY_NAME,name);v.put(MediaStore.MediaColumns.MIME_TYPE,"application/octet-stream");v.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");v.put(MediaStore.MediaColumns.IS_PENDING,1);
-            Uri u=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(u==null)return null;
-            try{try(OutputStream out=getContentResolver().openOutputStream(u);InputStream in=new FileInputStream(src)){if(out==null)throw new IOException("无法打开下载目录");byte[] b=new byte[1024*1024];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
-            v.clear();v.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(u,v,null,null);return u;
-            }catch(Exception e){try{getContentResolver().delete(u,null,null);}catch(Exception ignored){}throw e;}
+            ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/小李全联");values.put(MediaStore.MediaColumns.IS_PENDING,1);
+            Uri target=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(target==null)return null;
+            try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(target,"w")){if(out==null)throw new IOException("无法打开下载目录");copy(in,out);}
+            catch(Exception e){try{getContentResolver().delete(target,null,null);}catch(Exception ignored){}throw e;}
+            values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(target,values,null,null);return target;
         }
         File dir=new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),"小李全联");
         if(!dir.exists()&&!dir.mkdirs())throw new IOException("无法创建下载目录");
         File target=new File(dir,System.currentTimeMillis()+"_"+name);
-        try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){byte[] b=new byte[1024*1024];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
+        try(InputStream in=new FileInputStream(src);OutputStream out=new FileOutputStream(target)){copy(in,out);}
         return Uri.fromFile(target);
     }
+    private void copy(InputStream in,OutputStream out)throws IOException{byte[] buffer=new byte[1024*1024];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);}
     private void addHistory(String name,long size,String peer,String uri){
+        if(!getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("save_history",true))return;
         try{SharedPreferences p=getSharedPreferences("transfer_history",MODE_PRIVATE);JSONArray old=new JSONArray(p.getString("items","[]")),next=new JSONArray();JSONObject o=new JSONObject();o.put("direction","接收");o.put("name",name);o.put("size",size);o.put("peer",peer);o.put("time",System.currentTimeMillis());o.put("uri",uri);next.put(o);for(int i=0;i<old.length()&&i<199;i++)next.put(old.getJSONObject(i));p.edit().putString("items",next.toString()).apply();}catch(Exception ignored){}
     }
     private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte x:b)s.append(String.format(Locale.US,"%02x",x&255));return s.toString();}
