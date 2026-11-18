@@ -22,10 +22,6 @@ public final class TlsIdentity {
     public static final String PREFS="quanlian_diagnostics";
     public static final String KEY_PLAIN="plain_mode";
     public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
-    public static String plainFingerprint(){return String.join("",Collections.nCopies(64,"0"));}
-    public static final String PREFS="quanlian_diagnostics";
-    public static final String KEY_PLAIN="plain_mode";
-    public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
     public static String plainFingerprint(){return "0".repeat(64);}
     private TlsIdentity(){}
     private static synchronized KeyStore keyStore() throws Exception {
