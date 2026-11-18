@@ -22,7 +22,7 @@ public final class TlsIdentity {
                 .setKeySize(2048).setDigests(KeyProperties.DIGEST_SHA256)
                 .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                 .setCertificateSubject(new X500Principal("CN=QuanLian Device"))
-                .setCertificateSerialNumber(java.math.BigInteger.valueOf(Math.abs(new SecureRandom().nextLong())+1))
+                .setCertificateSerialNumber(new java.math.BigInteger(64,new SecureRandom()))
                 .setCertificateNotBefore(new Date(System.currentTimeMillis()-86400000L))
                 .setCertificateNotAfter(new Date(System.currentTimeMillis()+10L*365*86400000L)).build());
             gen.generateKeyPair();
