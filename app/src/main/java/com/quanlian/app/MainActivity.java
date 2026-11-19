@@ -714,7 +714,7 @@ public class MainActivity extends Activity {
 
    if(uris.isEmpty()){
     android.widget.GridLayout categories=new android.widget.GridLayout(this);
-    categories.setColumnCount(isTvMode()?6:3);categories.setUseDefaultMargins(false);
+    categories.setColumnCount(3);categories.setRowCount(2);categories.setUseDefaultMargins(false);
     addSendCategory(categories,"▤","文件",()->pick());
     addSendCategory(categories,"▧","媒体",()->pickMedia());
     addSendCategory(categories,"▣","剪贴板",()->addClipboardText());
@@ -724,12 +724,15 @@ public class MainActivity extends Activity {
     if(isTvMode()){
      for(int i=0;i<categories.getChildCount();i++){
       View card=categories.getChildAt(i);int id=card.getId();
-      int left=i>0?categories.getChildAt(i-1).getId():id;
-      int right=i+1<categories.getChildCount()?categories.getChildAt(i+1).getId():id;
+      int left=i%3>0?categories.getChildAt(i-1).getId():id;
+      int right=i%3<2?categories.getChildAt(i+1).getId():id;
+      int up=i>=3?categories.getChildAt(i-3).getId():id;
+      int down=i<3?categories.getChildAt(i+3).getId():id;
       card.setNextFocusLeftId(left);card.setNextFocusRightId(right);
+      card.setNextFocusUpId(up);card.setNextFocusDownId(down);
      }
     }
-    l.addView(categories);
+    l.addView(categories,new LinearLayout.LayoutParams(-1,-2));
    }else{
     LinearLayout preview=homeCard();
     LinearLayout previewHead=new LinearLayout(this);previewHead.setGravity(Gravity.CENTER_VERTICAL);
