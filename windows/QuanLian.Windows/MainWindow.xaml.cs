@@ -27,7 +27,7 @@ public partial class MainWindow : Window
         try
         {
             _discovery = new LanDiscoveryService(_deviceId);
-            _discovery.DeviceDiscovered += (_, device) => Dispatcher.Invoke(() =>
+            _discovery.DeviceDiscovered += device => Dispatcher.Invoke(() =>
             {
                 var index = -1;
                 for (var i = 0; i < _devices.Count; i++)
