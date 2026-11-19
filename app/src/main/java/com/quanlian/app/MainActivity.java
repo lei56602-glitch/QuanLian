@@ -383,7 +383,7 @@ public class MainActivity extends Activity {
  }
  private void unregisterReceiveReceiver(){if(receiveReceiver!=null){try{unregisterReceiver(receiveReceiver);}catch(Exception ignored){}receiveReceiver=null;}}
  private void publish(){
-  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));try{info.setAttribute("fp",TlsIdentity.fingerprint());}catch(Exception ignored){}
+  NsdServiceInfo info=new NsdServiceInfo();info.setServiceName(myName());info.setServiceType(TYPE);info.setPort(port);info.setAttribute("id",DeviceIdentity.id(this));try{info.setAttribute("fp",TlsIdentity.fingerprint(this));}catch(Exception ignored){}
   registration=new NsdManager.RegistrationListener(){public void onServiceRegistered(NsdServiceInfo s){discover();}public void onRegistrationFailed(NsdServiceInfo s,int e){runOnUiThread(()->Toast.makeText(MainActivity.this,"设备广播失败",Toast.LENGTH_SHORT).show());}public void onServiceUnregistered(NsdServiceInfo s){}public void onUnregistrationFailed(NsdServiceInfo s,int e){}};
   try{nsd.registerService(info,NsdManager.PROTOCOL_DNS_SD,registration);}catch(Exception ignored){}
  }
