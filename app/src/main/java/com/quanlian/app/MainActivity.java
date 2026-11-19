@@ -197,7 +197,7 @@ public class MainActivity extends Activity {
      root.addView(content,new LinearLayout.LayoutParams(0,-1,1));
     }else{
      ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);
-     root.addView(scroll,new LinearLayout.LayoutParams(0,0,1));
+     root.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
     }
    }else{
     ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);
@@ -302,7 +302,7 @@ public class MainActivity extends Activity {
   handleIncomingShare(getIntent());
  }
  @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putParcelableArrayList("selected_uris",new ArrayList<>(uris));out.putStringArrayList("selected_names",new ArrayList<>(names));out.putSerializable("selected_sizes",new ArrayList<>(sizes));out.putInt("current_page",page);}
- private void restorePage(){switch(page){case 6:settingsPage();break;case 1:if(!uris.isEmpty())sendPage();else receivePage();break;case 2:sendPage();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:receivePage();}}
+ private void restorePage(){switch(page){case 6:settingsPage();break;case 1:sendPage();break;case 2:sendPage();break;case 3:receivePage();break;case 4:historyPage();break;case 5:diagnosticsPage();break;default:receivePage();}}
  @Override public void onConfigurationChanged(android.content.res.Configuration newConfig){super.onConfigurationChanged(newConfig);applyWindowTheme();restorePage();}
  private void requestNotificationPermissionIfNeeded(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);}}
  @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_NOTIFICATIONS&&grantResults.length>0&&grantResults[0]!=android.content.pm.PackageManager.PERMISSION_GRANTED){Toast.makeText(this,"通知权限未开启，传输仍可尝试进行，但系统可能不会正常显示传输通知。",Toast.LENGTH_LONG).show();}}
