@@ -19,7 +19,7 @@ public sealed class LanDiscoveryService : IAsyncDisposable
     private readonly UdpClient _udp = new(AddressFamily.InterNetwork);
     private readonly CancellationTokenSource _stop = new();
     private readonly string _ownId;
-    public event EventHandler<DeviceInfo>? DeviceDiscovered;
+    public event Action<DeviceInfo>? DeviceDiscovered;
 
     public LanDiscoveryService(string ownId)
     {
@@ -48,7 +48,7 @@ public sealed class LanDiscoveryService : IAsyncDisposable
                 if (id.Length is < 8 or > 128 || name.Length is < 1 or > 128 ||
                     !System.Text.RegularExpressions.Regex.IsMatch(fp, "^[0-9a-fA-F]{64}$") ||
                     port is < 1 or > 65535 || id == _ownId) continue;
-                DeviceDiscovered?.Invoke(this, new DeviceInfo(id, name, packet.RemoteEndPoint.Address.ToString(), port, fp.ToLowerInvariant(), DateTime.UtcNow));
+                DeviceDiscovered?.Invoke(new DeviceInfo(id, name, packet.RemoteEndPoint.Address.ToString(), port, fp.ToLowerInvariant(), DateTime.UtcNow));
             }
             catch (OperationCanceledException) { break; }
             catch (ObjectDisposedException) { break; }
