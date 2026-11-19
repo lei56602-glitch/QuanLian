@@ -185,7 +185,74 @@ public class MainActivity extends Activity {
  private void gap(LinearLayout l,int h){l.addView(new View(this),new LinearLayout.LayoutParams(1,dp(h)));}
  private Button btn(String s,int c){if(c==0xff2878f5||c==0xff1f77dc)c=accentColor();Button b=new Button(this);b.setText(ui(s));b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
  private void install(LinearLayout l){int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);ScrollView s=new ScrollView(this);s.setFillViewport(true);s.setFocusable(false);if(widthDp>=700){FrameLayout frame=new FrameLayout(this);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.min(widthDp,1200)*((int)getResources().getDisplayMetrics().density),-1,Gravity.CENTER);s.addView(l,new ScrollView.LayoutParams(-1,-2));frame.addView(s,p);setContentView(frame);}else{s.addView(l);setContentView(s);}if(widthDp>=700){l.setPadding(dp(32),dp(28),dp(32),dp(28));}final int baseLeft=l.getPaddingLeft(),baseTop=l.getPaddingTop(),baseRight=l.getPaddingRight(),baseBottom=l.getPaddingBottom();l.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();v.setPadding(baseLeft,baseTop+top,baseRight,baseBottom);return insets;});l.requestApplyInsets();l.post(()->{ArrayList<View> focusables=l.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty()&&!focusables.get(0).hasFocus())focusables.get(0).requestFocus();});}
-  private void installFlow(LinearLayout content,int selected){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(pageBackground());ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));root.addView(flowNav(selected),new LinearLayout.LayoutParams(-1,-2));root.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();int bottom=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom:insets.getSystemWindowInsetBottom();v.setPadding(0,top,0,bottom);return insets;});setContentView(root);root.requestApplyInsets();}
+  private void installFlow(LinearLayout content,int selected){
+   int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
+   boolean landscapeRail=widthDp>=600;
+   LinearLayout root=new LinearLayout(this);
+   root.setOrientation(landscapeRail?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
+   root.setBackgroundColor(pageBackground());
+   ScrollView scroll=new ScrollView(this);
+   scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
+   scroll.addView(content);
+   if(landscapeRail){
+    root.addView(flowNav(selected,true),new LinearLayout.LayoutParams(dp(184),-1));
+    root.addView(scroll,new LinearLayout.LayoutParams(0,0,1));
+   }else{
+    root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+    root.addView(flowNav(selected,false),new LinearLayout.LayoutParams(-1,-2));
+   }
+   root.setOnApplyWindowInsetsListener((v,insets)->{
+    int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();
+    int bottom=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom:insets.getSystemWindowInsetBottom();
+    int left=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).left:insets.getSystemWindowInsetLeft();
+    int right=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).right:insets.getSystemWindowInsetRight();
+    v.setPadding(left,top,right,bottom);return insets;
+   });
+   setContentView(root);root.requestApplyInsets();
+  }
+  private LinearLayout flowNav(int selected,boolean vertical){
+   LinearLayout nav=new LinearLayout(this);
+   nav.setOrientation(vertical?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
+   nav.setGravity(vertical?Gravity.TOP|Gravity.CENTER_HORIZONTAL:Gravity.CENTER);
+   nav.setPadding(dp(vertical?14:12),dp(vertical?30:8),dp(vertical?14:12),dp(vertical?18:8));
+   nav.setBackgroundColor(vertical?(isDarkTheme()?0xff17243a:0xffeaf1ff):surfaceColor());
+   nav.setElevation(dp(8));
+   if(vertical){
+    LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);brand.setGravity(Gravity.CENTER);
+    TextView mark=homeText("↗",30,accentColor(),true);mark.setGravity(Gravity.CENTER);
+    mark.setBackground(shape(isDarkTheme()?0xff253b5d:0xffdce8ff,22));
+    brand.addView(mark,new LinearLayout.LayoutParams(dp(58),dp(58)));
+    TextView name=homeText("小李全联",18,isDarkTheme()?Color.WHITE:0xff182747,true);name.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams nameLp=new LinearLayout.LayoutParams(-1,-2);nameLp.topMargin=dp(10);brand.addView(name,nameLp);
+    nav.addView(brand);gap(nav,dp(34));
+   }
+   String[] labels={"接收","发送","设置"};
+   String[] glyphs={"receive","send","settings"};
+   for(int i=0;i<labels.length;i++){
+    final int index=i;
+    LinearLayout item=new LinearLayout(this);
+    item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);
+    item.setPadding(dp(14),dp(vertical?15:12),dp(14),dp(vertical?15:12));
+    item.setBackground(i==selected?shape(isDarkTheme()?0xff263d60:0xffdce8ff,24):shape(Color.TRANSPARENT,24));
+    NavigationGlyph glyph=new NavigationGlyph(this,glyphs[i],i==selected?accentColor():(isDarkTheme()?0xffaab8ce:0xff64748b));
+    item.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));
+    TextView label=homeText(labels[i],14,i==selected?accentColor():(isDarkTheme()?0xffd0d9e8:0xff66758d),i==selected);
+    LinearLayout.LayoutParams labelLp=new LinearLayout.LayoutParams(-2,-2);labelLp.leftMargin=dp(12);item.addView(label,labelLp);
+    item.setOnClickListener(v->{if(index==0)receivePage();else if(index==1)sendPage();else settingsPage();});
+    if(vertical){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);nav.addView(item,p);}
+    else nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
+   }
+   return nav;
+  }
+  private class NavigationGlyph extends View{
+   private final String kind;private final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);private final int color;
+   NavigationGlyph(Context c,String k,int col){super(c);kind=k;color=col;}
+   @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight(),cx=w/2,cy=h/2;p.setColor(color);p.setStyle(android.graphics.Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setStrokeCap(android.graphics.Paint.Cap.ROUND);p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+    if("receive".equals(kind)){for(int i=0;i<3;i++){float r=dp(5+i*4);c.drawArc(cx-r,cy-r,cx+r,cy+r,225,90,false,p);c.drawArc(cx-r,cy-r,cx+r,cy+r,45,90,false,p);}c.drawLine(cx,cy-dp(8),cx,cy+dp(7),p);c.drawLine(cx-dp(6),cy+dp(1),cx,cy+dp(7),p);c.drawLine(cx+dp(6),cy+dp(1),cx,cy+dp(7),p);}
+    else if("send".equals(kind)){android.graphics.Path path=new android.graphics.Path();path.moveTo(dp(3),dp(4));path.lineTo(w-dp(3),cy);path.lineTo(dp(3),h-dp(4));path.lineTo(dp(7),cy);path.close();p.setStyle(android.graphics.Paint.Style.FILL);c.drawPath(path,p);p.setStyle(android.graphics.Paint.Style.STROKE);c.drawLine(dp(7),cy,w-dp(3),cy,p);}
+    else{p.setStrokeWidth(dp(2.5f));c.drawCircle(cx,cy,dp(7),p);c.drawCircle(cx,cy,dp(2),p);for(int i=0;i<8;i++){double a=Math.PI*i/4;c.drawLine(cx+(float)Math.cos(a)*dp(9),cy+(float)Math.sin(a)*dp(9),cx+(float)Math.cos(a)*dp(11),cy+(float)Math.sin(a)*dp(11),p);}}
+   }
+  }
   private LinearLayout flowNav(int selected){LinearLayout nav=new LinearLayout(this);nav.setGravity(Gravity.CENTER);nav.setPadding(dp(10),dp(5),dp(10),dp(5));nav.setBackgroundColor(surfaceColor());nav.setElevation(dp(10));String[] labels={"接收","发送","设置"};String[] icons={"↓","↗","⚙"};for(int i=0;i<labels.length;i++){final int index=i;TextView item=homeText(icons[i]+"  "+labels[i],13,i==selected?0xff1769e8:0xff74839a,i==selected);item.setGravity(Gravity.CENTER);item.setPadding(dp(6),dp(13),dp(6),dp(13));item.setBackground(i==selected?shape(0xffedf4ff,18):shape(Color.TRANSPARENT,18));item.setOnClickListener(v->{if(index==0)receivePage();else if(index==1)sendPage();else settingsPage();});nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));}return nav;}
  private void header(LinearLayout l,String title,String sub){TextView back=homeText("‹  返回首页",15,0xff41618e,true);back.setPadding(0,0,0,dp(18));back.setOnClickListener(v->home());l.addView(back);l.addView(homeText(title,25,0xff182747,true));gap(l,6);l.addView(homeText(sub,14,0xff8491a8,false));gap(l,20);}
  private String myName(){return DeviceIdentity.name(this);}
@@ -673,12 +740,24 @@ public class MainActivity extends Activity {
    target.addView(deviceList);l.addView(target);refreshDevices();
    installFlow(l,1);
   }
+  private class SendCategoryIcon extends View{
+   private final String kind;private final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+   SendCategoryIcon(Context c,String k){super(c);kind=k;}
+   @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight(),cx=w/2,cy=h/2;p.setColor(accentColor());p.setStrokeWidth(dp(2));p.setStrokeCap(android.graphics.Paint.Cap.ROUND);p.setStrokeJoin(android.graphics.Paint.Join.ROUND);p.setStyle(android.graphics.Paint.Style.STROKE);
+    if("文件".equals(kind)){android.graphics.Path q=new android.graphics.Path();q.moveTo(cx-dp(9),cy-dp(12));q.lineTo(cx+dp(3),cy-dp(12));q.lineTo(cx+dp(10),cy-dp(5));q.lineTo(cx+dp(10),cy+dp(12));q.lineTo(cx-dp(9),cy+dp(12));q.close();c.drawPath(q,p);c.drawLine(cx+dp(3),cy-dp(12),cx+dp(3),cy-dp(5),p);c.drawLine(cx+dp(3),cy-dp(5),cx+dp(10),cy-dp(5),p);for(int i=-1;i<=1;i++)c.drawLine(cx-dp(5),cy+dp(i*5),cx+dp(5),cy+dp(i*5),p);}
+    else if("媒体".equals(kind)){c.drawRoundRect(cx-dp(13),cy-dp(10),cx+dp(13),cy+dp(10),dp(3),dp(3),p);p.setStyle(android.graphics.Paint.Style.FILL);c.drawCircle(cx+dp(6),cy-dp(4),dp(2),p);android.graphics.Path q=new android.graphics.Path();q.moveTo(cx-dp(10),cy+dp(7));q.lineTo(cx-dp(3),cy-dp(1));q.lineTo(cx+dp(1),cy+dp(3));q.lineTo(cx+dp(5),cy- dp(1));q.lineTo(cx+dp(10),cy+dp(7));q.close();c.drawPath(q,p);}
+    else if("剪贴板".equals(kind)){c.drawRoundRect(cx-dp(10),cy-dp(9),cx+dp(10),cy+dp(12),dp(2),dp(2),p);c.drawRoundRect(cx-dp(5),cy-dp(13),cx+dp(5),cy-dp(6),dp(2),dp(2),p);}
+    else if("文本".equals(kind)){p.setStyle(android.graphics.Paint.Style.FILL);p.setTextSize(dp(25));p.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));c.drawText("T",cx-p.measureText("T")/2,cy+dp(9),p);}
+    else if("文件夹".equals(kind)){android.graphics.Path q=new android.graphics.Path();q.moveTo(cx-dp(13),cy-dp(7));q.lineTo(cx-dp(3),cy-dp(7));q.lineTo(cx+dp(1),cy-dp(3));q.lineTo(cx+dp(13),cy-dp(3));q.lineTo(cx+dp(11),cy+dp(10));q.lineTo(cx-dp(12),cy+dp(10));q.close();c.drawPath(q,p);}
+    else{for(int r=0;r<3;r++)for(int col=0;col<3;col++)c.drawRoundRect(cx-dp(11)+col*dp(8),cy-dp(11)+r*dp(8),cx-dp(6)+col*dp(8),cy-dp(6)+r*dp(8),dp(1),dp(1),p);}
+   }
+  }
   private void addSendCategory(android.widget.GridLayout grid,String symbol,String label,Runnable action){
-   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(shape(surfaceColor(),16));tile.setFocusable(true);tile.setClickable(true);
-   TextView icon=homeText(symbol,22,0xff2878f5,true);icon.setGravity(Gravity.CENTER);tile.addView(icon);gap(tile,6);
-   TextView title=homeText(label,13,0xff263957,true);title.setGravity(Gravity.CENTER);tile.addView(title);
+   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(focusBackground(surfaceColor(),isDarkTheme()?0xff263d60:0xffe8f1ff,18));tile.setFocusable(true);tile.setClickable(true);
+   SendCategoryIcon icon=new SendCategoryIcon(this,label);tile.addView(icon,new LinearLayout.LayoutParams(dp(30),dp(30)));gap(tile,7);
+   TextView title=homeText(label,14,isDarkTheme()?0xffe7edf7:0xff263957,true);title.setGravity(Gravity.CENTER);tile.addView(title);
    tile.setOnClickListener(v->action.run());
-   android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(86);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(4),dp(4),dp(4),dp(4));grid.addView(tile,p);
+   android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(88);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(4),dp(4),dp(4),dp(4));grid.addView(tile,p);
   }
   private void pickMedia(){
    Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");
