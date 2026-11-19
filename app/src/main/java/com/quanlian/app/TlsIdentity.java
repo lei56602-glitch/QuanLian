@@ -27,7 +27,7 @@ public final class TlsIdentity {
     private static SSLContext context(X509TrustManager trust, boolean useLocalIdentity) throws Exception {
         KeyManager[] keyManagers=null;
         if(useLocalIdentity) {
-            InMemoryTlsIdentity identity=InMemoryTlsIdentity.get();
+            InMemoryTlsIdentity identity=InMemoryTlsIdentity.get(context);
             keyManagers=new KeyManager[]{identity.keyManager};
             android.util.Log.i("QuanLianTLS","Server identity pinned in memory; keyAlgorithm="
                 +identity.keyPair.getPrivate().getAlgorithm()+", keyBits=2048"
