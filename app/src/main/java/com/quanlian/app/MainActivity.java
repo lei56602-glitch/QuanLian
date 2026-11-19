@@ -191,13 +191,16 @@ public class MainActivity extends Activity {
    LinearLayout root=new LinearLayout(this);
    root.setOrientation(landscapeRail?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
    root.setBackgroundColor(pageBackground());
-   ScrollView scroll=new ScrollView(this);
-   scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
-   scroll.addView(content);
    if(landscapeRail){
     root.addView(flowNav(selected,true),new LinearLayout.LayoutParams(dp(184),-1));
-    root.addView(scroll,new LinearLayout.LayoutParams(0,0,1));
+    if(page==3){
+     root.addView(content,new LinearLayout.LayoutParams(0,-1,1));
+    }else{
+     ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);
+     root.addView(scroll,new LinearLayout.LayoutParams(0,0,1));
+    }
    }else{
+    ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);scroll.addView(content);
     root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
     root.addView(flowNav(selected,false),new LinearLayout.LayoutParams(-1,-2));
    }
@@ -215,16 +218,16 @@ public class MainActivity extends Activity {
    nav.setOrientation(vertical?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
    nav.setGravity(vertical?Gravity.TOP|Gravity.CENTER_HORIZONTAL:Gravity.CENTER);
    nav.setPadding(dp(vertical?14:12),dp(vertical?30:8),dp(vertical?14:12),dp(vertical?18:8));
-   nav.setBackgroundColor(vertical?(isDarkTheme()?0xff17243a:0xffeaf1ff):surfaceColor());
+   nav.setBackgroundColor(vertical?(isDarkTheme()?0xff14243b:0xffeaf2ff):surfaceColor());
    nav.setElevation(dp(8));
    if(vertical){
     LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);brand.setGravity(Gravity.CENTER);
-    TextView mark=homeText("↗",30,accentColor(),true);mark.setGravity(Gravity.CENTER);
-    mark.setBackground(shape(isDarkTheme()?0xff253b5d:0xffdce8ff,22));
-    brand.addView(mark,new LinearLayout.LayoutParams(dp(58),dp(58)));
+    BrandMarkView mark=new BrandMarkView(this);brand.addView(mark,new LinearLayout.LayoutParams(dp(76),dp(76)));
     TextView name=homeText("小李全联",18,isDarkTheme()?Color.WHITE:0xff182747,true);name.setGravity(Gravity.CENTER);
-    LinearLayout.LayoutParams nameLp=new LinearLayout.LayoutParams(-1,-2);nameLp.topMargin=dp(10);brand.addView(name,nameLp);
-    nav.addView(brand);gap(nav,34);
+    LinearLayout.LayoutParams nameLp=new LinearLayout.LayoutParams(-1,-2);nameLp.topMargin=dp(12);brand.addView(name,nameLp);
+    TextView tagline=homeText("设备互联 · 极速传输",10,isDarkTheme()?0xff9fb2d0:0xff8294ae,false);tagline.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams tagLp=new LinearLayout.LayoutParams(-1,-2);tagLp.topMargin=dp(5);brand.addView(tagline,tagLp);
+    nav.addView(brand);gap(nav,38);
    }
    String[] labels={"接收","发送","设置"};
    String[] glyphs={"receive","send","settings"};
@@ -234,7 +237,7 @@ public class MainActivity extends Activity {
     item.setOrientation(LinearLayout.HORIZONTAL);item.setGravity(Gravity.CENTER_VERTICAL);
     item.setPadding(dp(14),dp(vertical?15:12),dp(14),dp(vertical?15:12));
     item.setBackground(i==selected?shape(isDarkTheme()?0xff263d60:0xffdce8ff,24):shape(Color.TRANSPARENT,24));
-    NavigationGlyph glyph=new NavigationGlyph(this,glyphs[i],i==selected?accentColor():(isDarkTheme()?0xffaab8ce:0xff64748b));
+    NavigationGlyph glyph=new NavigationGlyph(this,glyphs[i],i==selected?accentColor():(isDarkTheme()?0xffaab8ce:0xff64758d));
     item.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));
     TextView label=homeText(labels[i],14,i==selected?accentColor():(isDarkTheme()?0xffd0d9e8:0xff66758d),i==selected);
     LinearLayout.LayoutParams labelLp=new LinearLayout.LayoutParams(-2,-2);labelLp.leftMargin=dp(12);item.addView(label,labelLp);
@@ -243,6 +246,24 @@ public class MainActivity extends Activity {
     else nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
    }
    return nav;
+  }
+  private class BrandMarkView extends View{
+   private final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+   private final long start=android.os.SystemClock.uptimeMillis();
+   BrandMarkView(Context c){super(c);setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
+   @Override protected void onDraw(android.graphics.Canvas c){
+    super.onDraw(c);float cx=getWidth()/2f,cy=getHeight()/2f,r=Math.min(getWidth(),getHeight())*.36f;
+    boolean anim=getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("animations_enabled",true);
+    float a=anim?(android.os.SystemClock.uptimeMillis()-start)*.00022f:0f;
+    p.setStyle(android.graphics.Paint.Style.FILL);p.setColor(isDarkTheme()?0xff1d3556:0xffdceaff);c.drawCircle(cx,cy,r*1.55f,p);
+    p.setStyle(android.graphics.Paint.Style.STROKE);p.setStrokeWidth(dp(2.4f));p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+    p.setColor(0xff397fe8);c.save();c.rotate((float)Math.toDegrees(a),cx,cy);
+    c.drawOval(cx-r*1.2f,cy-r*.55f,cx+r*1.2f,cy+r*.55f,p);
+    c.rotate(60,cx,cy);p.setColor(0xff65b5ff);c.drawOval(cx-r*1.2f,cy-r*.55f,cx+r*1.2f,cy+r*.55f,p);c.restore();
+    p.setStyle(android.graphics.Paint.Style.FILL);p.setColor(0xff2878f5);c.drawCircle(cx,cy,dp(7),p);
+    for(int i=0;i<3;i++){double ang=a+i*Math.PI*2/3;float x=cx+(float)Math.cos(ang)*r*1.05f,y=cy+(float)Math.sin(ang)*r*1.05f;p.setColor(i==1?0xff6bc3ff:0xff2878f5);c.drawCircle(x,y,dp(4),p);}
+    if(anim)postInvalidateDelayed(40);
+   }
   }
   private class NavigationGlyph extends View{
    private final String kind;private final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);private final int color;
@@ -858,32 +879,36 @@ public class MainActivity extends Activity {
    float cx=getWidth()/2f,cy=getHeight()/2f;
    float max=Math.min(getWidth(),getHeight())*.43f;
    boolean animated=getSharedPreferences("ui_settings",MODE_PRIVATE).getBoolean("animations_enabled",true);
-   float t=animated?((android.os.SystemClock.uptimeMillis()-started)%2400L)/2400f:0f;
-   paint.setStyle(android.graphics.Paint.Style.STROKE);
-   paint.setStrokeWidth(dp(1.5f));
-   paint.setColor(0xffdceaff);
-   canvas.drawCircle(cx,cy,max*.82f,paint);
-   for(int i=0;i<3;i++){
-    float phase=animated?(t+i/3f)%1f:.72f;
-    float radius=dp(42)+phase*(max-dp(42));
-    paint.setColor(android.graphics.Color.argb(animated?(int)(135*(1-phase)):55,42,132,245));
-    paint.setStrokeWidth(dp(2));
-    canvas.drawCircle(cx,cy,radius,paint);
-   }
+   float t=animated?((android.os.SystemClock.uptimeMillis()-started)%3600L)/3600f:0f;
    paint.setStyle(android.graphics.Paint.Style.FILL);
-   paint.setColor(0xffeaf3ff);
-   canvas.drawCircle(cx,cy,dp(43),paint);
-   paint.setColor(0xff2878f5);
-   android.graphics.RectF phone=new android.graphics.RectF(cx-dp(24),cy-dp(31),cx+dp(24),cy+dp(31));
-   canvas.drawRoundRect(phone,dp(8),dp(8),paint);
-   paint.setColor(Color.WHITE);
-   android.graphics.RectF screen=new android.graphics.RectF(cx-dp(19),cy-dp(25),cx+dp(19),cy+dp(23));
-   canvas.drawRoundRect(screen,dp(4),dp(4),paint);
-   paint.setColor(0xff2878f5);
+   paint.setColor(0x183b86ef);canvas.drawCircle(cx,cy,max*.70f,paint);
+   paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(1.4f));
+   for(int i=0;i<4;i++){
+    float phase=animated?(t+i*.25f)%1f:.5f;
+    float radius=max*(.42f+phase*.58f);
+    paint.setColor(android.graphics.Color.argb(animated?(int)(100*(1-phase)):38,55,133,238));
+    paint.setStrokeWidth(dp(i==0?2.4f:1.5f));canvas.drawCircle(cx,cy,radius,paint);
+   }
+   // Subtle orbit paths and moving data nodes.
+   paint.setColor(0x553b8af0);paint.setStrokeWidth(dp(1.2f));
+   canvas.drawOval(cx-max*.82f,cy-max*.34f,cx+max*.82f,cy+max*.34f,paint);
+   canvas.save();canvas.rotate(-58,cx,cy);canvas.drawOval(cx-max*.82f,cy-max*.34f,cx+max*.82f,cy+max*.34f,paint);canvas.restore();
+   for(int i=0;i<5;i++){
+    double a=(animated?t*Math.PI*2:0)+i*Math.PI*2/5;
+    float x=cx+(float)Math.cos(a)*max*.82f,y=cy+(float)Math.sin(a)*max*.34f;
+    paint.setStyle(android.graphics.Paint.Style.FILL);paint.setColor(0xff3d91ff);canvas.drawCircle(x,y,dp(i==0?4:2.7f),paint);
+    paint.setColor(0x553d91ff);canvas.drawCircle(x,y,dp(7),paint);
+   }
+   // Central receiver module with soft halo.
+   paint.setColor(0x223b86ef);canvas.drawCircle(cx,cy,dp(55),paint);
+   paint.setColor(0xffe8f1ff);canvas.drawCircle(cx,cy,dp(46),paint);
+   paint.setColor(0xff347ff0);paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(4));
+   android.graphics.RectF device=new android.graphics.RectF(cx-dp(24),cy-dp(31),cx+dp(24),cy+dp(31));
+   canvas.drawRoundRect(device,dp(9),dp(9),paint);
+   paint.setColor(0xff347ff0);paint.setStrokeWidth(dp(3.5f));paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
    android.graphics.Path arrow=new android.graphics.Path();
-   arrow.moveTo(cx,cy-dp(18));arrow.lineTo(cx,cy+dp(7));
-   arrow.moveTo(cx-dp(10),cy-dp(3));arrow.lineTo(cx,cy+dp(8));arrow.lineTo(cx+dp(10),cy-dp(3));
-   paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(3));paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+   arrow.moveTo(cx,cy-dp(17));arrow.lineTo(cx,cy+dp(9));
+   arrow.moveTo(cx-dp(10),cy-dp(1));arrow.lineTo(cx,cy+dp(10));arrow.lineTo(cx+dp(10),cy-dp(1));
    canvas.drawPath(arrow,paint);
    if(animated)postInvalidateDelayed(32);
   }
@@ -891,29 +916,30 @@ public class MainActivity extends Activity {
  private void receivePage(){
   page=3;deviceList=null;deviceStatus=null;
   applyWindowTheme();
+  int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
+  boolean wide=widthDp>=600;
   LinearLayout l=col();l.setBackgroundColor(pageBackground());
   l.setGravity(Gravity.CENTER_HORIZONTAL);
+  if(wide)l.setPadding(dp(28),dp(12),dp(28),dp(12));
   LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
   TextView history=homeText("◷",24,0xff263957,true);history.setGravity(Gravity.CENTER);
-  history.setPadding(dp(12),dp(8),dp(12),dp(8));
-  history.setOnClickListener(v->historyPage());top.addView(history);
+  history.setPadding(dp(12),dp(8),dp(12),dp(8));history.setOnClickListener(v->historyPage());top.addView(history);
   TextView info=homeText("●",20,0xff263957,true);info.setGravity(Gravity.CENTER);
-  info.setPadding(dp(12),dp(8),dp(12),dp(8));
-  info.setOnClickListener(v->infoPage("关于小李全联","小李全联是一款局域网文件传输工具。\n无广告，不上传文件内容。"));
-  top.addView(info);l.addView(top);
+  info.setPadding(dp(12),dp(8),dp(12),dp(8));info.setOnClickListener(v->infoPage("关于小李全联","小李全联是一款局域网文件传输工具。\n无广告，不上传文件内容。"));top.addView(info);
+  l.addView(top);
   LinearLayout center=new LinearLayout(this);center.setOrientation(LinearLayout.VERTICAL);
-  center.setGravity(Gravity.CENTER);center.setPadding(0,dp(20),0,dp(20));
+  center.setGravity(Gravity.CENTER);center.setPadding(0,dp(wide?4:20),0,dp(wide?4:20));
   ReceiveAnimationView animation=new ReceiveAnimationView(this);
-  LinearLayout.LayoutParams animationParams=new LinearLayout.LayoutParams(dp(220),dp(220));
+  int visualSize=wide?Math.min(300,Math.max(240,widthDp/3)):220;
+  LinearLayout.LayoutParams animationParams=new LinearLayout.LayoutParams(dp(visualSize),dp(visualSize));
   animationParams.gravity=Gravity.CENTER_HORIZONTAL;center.addView(animation,animationParams);
-  gap(center,18);
-  TextView brand=homeText("小李全联",34,0xff182747,true);brand.setGravity(Gravity.CENTER);
-  center.addView(brand);
-  gap(center,18);
-  receiveStatus=homeText(port>0?"接收服务已启动 · 正在等待附近设备":"正在启动接收服务…",13,0xff8491a8,false);
+  gap(center,wide?8:18);
+  TextView brand=homeText("小李全联",wide?30:34,0xff182747,true);brand.setGravity(Gravity.CENTER);center.addView(brand);
+  gap(center,wide?8:18);
+  receiveStatus=homeText(port>0?"接收服务已启动 · 正在等待附近设备":"正在启动接收服务…",wide?14:13,0xff8491a8,false);
   receiveStatus.setGravity(Gravity.CENTER);center.addView(receiveStatus);
-  LinearLayout.LayoutParams centerParams=new LinearLayout.LayoutParams(-1,0,1);
-  l.addView(center,centerParams);
+  if(wide){TextView hint=homeText("设备靠近时自动识别 · 安全加密传输",12,0xff9aa9bf,false);hint.setGravity(Gravity.CENTER);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(-1,-2);hp.topMargin=dp(12);center.addView(hint,hp);}
+  LinearLayout.LayoutParams centerParams=new LinearLayout.LayoutParams(-1,0,1);l.addView(center,centerParams);
   installFlow(l,0);
  }
  @Override protected void onDestroy(){unregisterSendReceiver();if(sendProgress!=null){try{sendProgress.dismiss();}catch(Exception ignored){}sendProgress=null;}alive=false;discoveryHandler.removeCallbacks(pruneDevices);unregisterReceiveReceiver();if(udpDiscovery!=null){udpDiscovery.close();udpDiscovery=null;}try{if(nsd!=null&&discovery!=null)nsd.stopServiceDiscovery(discovery);}catch(Exception ignored){}try{if(nsd!=null&&registration!=null)nsd.unregisterService(registration);}catch(Exception ignored){}try{if(lock!=null&&lock.isHeld())lock.release();}catch(Exception ignored){}workers.shutdownNow();super.onDestroy();}
