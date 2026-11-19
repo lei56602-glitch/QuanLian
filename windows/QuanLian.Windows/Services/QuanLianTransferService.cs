@@ -336,8 +336,8 @@ internal static class JavaWire
         using var buffer = new MemoryStream();
         foreach (var ch in value)
         {
-            if (ch is >= '\\u0001' and <= '\\u007F') buffer.WriteByte((byte)ch);
-            else if (ch <= '\\u07FF') { buffer.WriteByte((byte)(0xC0 | ((ch >> 6) & 0x1F))); buffer.WriteByte((byte)(0x80 | (ch & 0x3F))); }
+            if (ch >= (char)1 && ch <= (char)127) buffer.WriteByte((byte)ch);
+            else if (ch <= (char)2047) { buffer.WriteByte((byte)(0xC0 | ((ch >> 6) & 0x1F))); buffer.WriteByte((byte)(0x80 | (ch & 0x3F))); }
             else { buffer.WriteByte((byte)(0xE0 | ((ch >> 12) & 0x0F))); buffer.WriteByte((byte)(0x80 | ((ch >> 6) & 0x3F))); buffer.WriteByte((byte)(0x80 | (ch & 0x3F))); }
         }
         if (buffer.Length > ushort.MaxValue) throw new InvalidDataException("Java UTF field exceeds 65535 bytes");
