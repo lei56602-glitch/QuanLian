@@ -21,6 +21,8 @@ public class ReceiveForegroundService extends Service {
     public static final String ACTION_INCOMING="com.quanlian.app.receive.INCOMING";
     public static final String ACTION_DECISION="com.quanlian.app.receive.DECISION";
     public static final String ACTION_STATUS="com.quanlian.app.receive.STATUS";
+    public static final String ACTION_COMPLETE="com.quanlian.app.receive.COMPLETE";
+    public static final String EXTRA_FILES="files_json";
     public static final String EXTRA_ID="request_id", EXTRA_ACCEPT="accept", EXTRA_SENDER="sender", EXTRA_COUNT="count", EXTRA_TOTAL="total", EXTRA_PORT="port", EXTRA_TEXT="text", EXTRA_PROGRESS="progress";
     private static final String TYPE="_quanlian._tcp.", CHANNEL="quanlian_receive";
     private static final int NOTIFICATION_ID=2102, BUF=65536;
@@ -55,7 +57,8 @@ public class ReceiveForegroundService extends Service {
     @Override public void onCreate(){
         super.onCreate();
         NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if(Build.VERSION.SDK_INT>=26){NotificationChannel ch=new NotificationChannel(CHANNEL,"文件接收",NotificationManager.IMPORTANCE_LOW);ch.setDescription("小李全联正在等待局域网文件");nm.createNotificationChannel(ch);}
+        if(Build.VERSION.SDK_INT>=26){NotificationChannel ch=new NotificationChannel(CHANNEL,"文件接收",NotificationManager.IMPORTANCE_LOW);ch.setDescription("小李全联正在等待局域网文件");nm.createNotificationChannel(ch);
+            NotificationChannel done=new NotificationChannel("quanlian_receive_done","接收完成提醒",NotificationManager.IMPORTANCE_DEFAULT);done.setDescription("文件接收完成后提醒并提供打开方式");nm.createNotificationChannel(done);}
         Notification n=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?CHANNEL:"")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("小李全联 · 接收服务")
@@ -133,6 +136,7 @@ public class ReceiveForegroundService extends Service {
             String protocol=in.readUTF();DiagnosticLog.info(this,"APPLICATION_PROTOCOL_RECEIVED","protocol="+protocol+", peer="+socket.getInetAddress().getHostAddress());android.util.Log.i("QuanLianReceive","Received application protocol "+protocol+" from "+socket.getInetAddress().getHostAddress());if(LanDiscovery.PROBE.equals(protocol)){out.writeUTF(LanDiscovery.PROBE_OK);out.flush();return;}boolean batched="QUANLIAN4".equals(protocol);boolean resumable=batched||"QUANLIAN3".equals(protocol);if(!resumable&&!"QUANLIAN2".equals(protocol))throw new IOException("传输协议不匹配");
             String sender=in.readUTF();if(sender==null||sender.length()>128)throw new IOException("发送设备名称无效");String senderId=resumable?in.readUTF():"legacy";if(senderId.length()>128)throw new IOException("发送设备身份无效");int count=in.readInt();if(count<1||count>500)throw new IOException("文件数量无效");
             ArrayList<String> names=new ArrayList<>(),hashes=new ArrayList<>();ArrayList<Long> sizes=new ArrayList<>();long total=0;
+            JSONArray completedFiles=new JSONArray();
             for(int x=0;x<count;x++){String name=in.readUTF();long size=in.readLong();String hash=in.readUTF();if(name==null||name.length()>255||size<0||!hash.matches("(?i)[0-9a-f]{64}")||total>Long.MAX_VALUE-size)throw new IOException("文件信息无效");names.add(name);sizes.add(size);hashes.add(hash);total+=size;}
             PendingRequest request=new PendingRequest(UUID.randomUUID().toString());pendingRequests.put(request.id,request);
             DiagnosticLog.info(this,"INCOMING_REQUEST_READY","sender="+sender+", files="+count+", bytes="+total );
@@ -186,11 +190,28 @@ public class ReceiveForegroundService extends Service {
                 }
                 if(!hex(digest.digest()).equalsIgnoreCase(hashes.get(x))){tmp.delete();throw new IOException("文件校验失败："+safe);}
                 Uri saved;try{saved=saveFile(tmp,safe);}finally{if(tmp.exists())tmp.delete();}if(saved==null)throw new IOException("无法保存文件："+safe);
-                addHistory(safe,sizes.get(x),sender,saved.toString());if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
+                addHistory(safe,sizes.get(x),sender,saved.toString());JSONObject completedFile=new JSONObject();completedFile.put("name",safe);completedFile.put("uri",saved.toString());completedFile.put("size",sizes.get(x));completedFiles.put(completedFile);if(resumable)getSharedPreferences("completed_incoming",MODE_PRIVATE).edit().putBoolean(completedKey,true).commit();broadcastStatus("正在接收第 "+(x+1)+"/"+count+" 个文件："+safe,port(),(int)(((x+1)*1000L)/count));
             }
             out.writeBoolean(true);out.flush();broadcastStatus("接收完成，文件完整性校验通过",port());
+            if(completedFiles.length()>0)notifyReceiveComplete(sender,completedFiles);
         }catch(Exception e){DiagnosticLog.error(this,"RECEIVE_PROCESSING_FAILED",e);android.util.Log.e("QuanLianReceive","接收会话处理失败 mode="+(TlsIdentity.plainMode(this)?"PLAIN":"TLS"),e);broadcastStatus("接收失败："+e.getClass().getSimpleName()+"："+e.getMessage(),port());}
         finally{releaseReceiveWakeLock();}
+    }
+    private void notifyReceiveComplete(String sender,JSONArray files){
+        String firstName=files.optJSONObject(0)==null?"文件":files.optJSONObject(0).optString("name","文件");
+        Intent event=new Intent(ACTION_COMPLETE).setPackage(getPackageName());
+        event.putExtra(EXTRA_SENDER,sender);event.putExtra(EXTRA_COUNT,files.length());event.putExtra(EXTRA_FILES,files.toString());
+        sendBroadcast(event);
+        Intent launch=new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent content=PendingIntent.getActivity(this,2103,launch,PendingIntent.FLAG_UPDATE_CURRENT|(Build.VERSION.SDK_INT>=23?PendingIntent.FLAG_IMMUTABLE:0));
+        Notification n=new Notification.Builder(this,Build.VERSION.SDK_INT>=26?"quanlian_receive_done":"")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("文件接收完成")
+            .setContentText(files.length()+" 个文件已从 "+sender+" 接收完成")
+            .setStyle(new Notification.BigTextStyle().bigText("已成功接收："+firstName+(files.length()>1?" 等 "+files.length()+" 个文件":"")+"。点击打开小李全联查看文件。"))
+            .setContentIntent(content).setAutoCancel(true).build();
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(nm!=null)nm.notify((int)(System.currentTimeMillis()%100000)+3000,n);
     }
     private int port(){return server==null?-1:server.getLocalPort();}
     private Uri saveFile(File src,String name)throws Exception{
