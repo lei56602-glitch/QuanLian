@@ -211,7 +211,7 @@ public class MainActivity extends Activity {
     int right=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).right:insets.getSystemWindowInsetRight();
     v.setPadding(left,top,right,bottom);return insets;
    });
-   root.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+   root.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
    setContentView(root);root.requestApplyInsets();
    if(landscapeRail)root.post(()->{ArrayList<View> focusables=root.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty())focusables.get(0).requestFocus();});
   }
@@ -721,6 +721,14 @@ public class MainActivity extends Activity {
     addSendCategory(categories,"T","文本",()->createTextFile());
     addSendCategory(categories,"▱","文件夹",()->pickFolder());
     addSendCategory(categories,"APK","应用",()->pickApk());
+    if(isTvMode()){
+     for(int i=0;i<categories.getChildCount();i++){
+      View card=categories.getChildAt(i);int id=card.getId();
+      int left=i>0?categories.getChildAt(i-1).getId():id;
+      int right=i+1<categories.getChildCount()?categories.getChildAt(i+1).getId():id;
+      card.setNextFocusLeftId(left);card.setNextFocusRightId(right);
+     }
+    }
     l.addView(categories);
    }else{
     LinearLayout preview=homeCard();
@@ -839,6 +847,7 @@ public class MainActivity extends Activity {
   }
   private void addSendCategory(android.widget.GridLayout grid,String symbol,String label,Runnable action){
    AdaptiveFeatureCard tile=new AdaptiveFeatureCard(label,action);
+   if(isTvMode())tile.setId(View.generateViewId());
    android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(isTvMode()?108:88);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(isTvMode()?5:4),dp(4),dp(isTvMode()?5:4),dp(4));grid.addView(tile,p);
   }
   private void pickMedia(){
