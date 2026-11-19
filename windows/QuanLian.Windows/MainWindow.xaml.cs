@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -88,14 +89,80 @@ public partial class MainWindow : Window
 
     private async void SendFiles_Click(object sender, RoutedEventArgs e)
     {
-        if (_transfer is null || _devices.Count == 0)
+        if (_transfer is null)
+        {
+            MessageBox.Show(this, "文件传输服务尚未启动。", "小李全联", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var kind = (sender as Button)?.Tag?.ToString() ?? "file";
+        var paths = new List<string>();
+        switch (kind)
+        {
+            case "image":
+            {
+                var dialog = new OpenFileDialog { Title = "选择图片", Multiselect = true, Filter = "图片文件|*.jpg;*.jpeg;*.png;*.gif;*.bmp;*.webp;*.heic|所有文件|*.*" };
+                if (dialog.ShowDialog(this) != true) return;
+                paths.AddRange(dialog.FileNames);
+                break;
+            }
+            case "media":
+            {
+                var dialog = new OpenFileDialog { Title = "选择音频或视频", Multiselect = true, Filter = "媒体文件|*.mp4;*.mkv;*.mov;*.avi;*.mp3;*.wav;*.flac;*.m4a;*.aac|所有文件|*.*" };
+                if (dialog.ShowDialog(this) != true) return;
+                paths.AddRange(dialog.FileNames);
+                break;
+            }
+            case "folder":
+            {
+                var dialog = new OpenFolderDialog { Title = "选择要发送的文件夹", Multiselect = false };
+                if (dialog.ShowDialog(this) != true || string.IsNullOrWhiteSpace(dialog.FolderName)) return;
+                try { paths.AddRange(Directory.EnumerateFiles(dialog.FolderName, "*", SearchOption.AllDirectories)); }
+                catch (Exception ex) { MessageBox.Show(this, "读取文件夹失败：" + ex.Message, "小李全联", MessageBoxButton.OK, MessageBoxImage.Error); return; }
+                if (paths.Count == 0) { MessageBox.Show(this, "这个文件夹里面没有可发送的文件。"); return; }
+                if (paths.Count > 500) { MessageBox.Show(this, "单次最多发送 500 个文件，请拆分后发送。"); return; }
+                break;
+            }
+            case "text":
+            {
+                var editor = new Window { Title = "发送文本", Owner = this, Width = 620, Height = 430, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = new SolidColorBrush(Color.FromRgb(244, 248, 255)) };
+                var layout = new DockPanel { Margin = new Thickness(18) };
+                var textBox = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontSize = 15, Padding = new Thickness(12), MinHeight = 280 };
+                var sendButton = new Button { Content = "继续选择接收设备", Height = 42, Margin = new Thickness(0, 12, 0, 0), IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(40, 120, 232)), Foreground = Brushes.White };
+                sendButton.Click += (_, _) => { if (string.IsNullOrWhiteSpace(textBox.Text)) { MessageBox.Show(editor, "请输入要发送的文本。"); return; } editor.DialogResult = true; };
+                layout.Children.Add(sendButton);
+                layout.Children.Add(textBox);
+                editor.Content = layout;
+                if (editor.ShowDialog() != true) return;
+                var textDirectory = Path.Combine(Path.GetTempPath(), "QuanLianText");
+                Directory.CreateDirectory(textDirectory);
+                var textPath = Path.Combine(textDirectory, $"文本_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.txt");
+                await File.WriteAllTextAsync(textPath, textBox.Text, new System.Text.UTF8Encoding(false));
+                paths.Add(textPath);
+                break;
+            }
+            case "app":
+            {
+                var dialog = new OpenFileDialog { Title = "选择应用安装包", Multiselect = true, Filter = "Windows 应用安装包|*.exe;*.msi;*.msix;*.appx;*.msixbundle;*.appxbundle|所有文件|*.*" };
+                if (dialog.ShowDialog(this) != true) return;
+                paths.AddRange(dialog.FileNames);
+                break;
+            }
+            default:
+            {
+                var dialog = new OpenFileDialog { Title = "选择要发送的文件", Multiselect = true, CheckFileExists = true };
+                if (dialog.ShowDialog(this) != true) return;
+                paths.AddRange(dialog.FileNames);
+                break;
+            }
+        }
+
+        if (paths.Count == 0) return;
+        if (_devices.Count == 0)
         {
             MessageBox.Show(this, "暂未发现可用的接收设备，请确认双方处于同一局域网。", "小李全联", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-
-        var dialog = new OpenFileDialog { Title = "选择要发送的文件", Multiselect = true, CheckFileExists = true };
-        if (dialog.ShowDialog(this) != true) return;
 
         var picker = new Window
         {
@@ -105,8 +172,7 @@ public partial class MainWindow : Window
         };
         var panel = new DockPanel { Margin = new Thickness(18) };
         var list = new ListBox { ItemsSource = _devices, DisplayMemberPath = nameof(DeviceInfo.Name), Margin = new Thickness(0, 12, 0, 12) };
-        DockPanel.SetDock(list, Dock.Top);
-        var send = new Button { Content = "发送文件", Height = 42, IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(40, 120, 232)), Foreground = System.Windows.Media.Brushes.White };
+        var send = new Button { Content = "发送文件", Height = 42, IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(40, 120, 232)), Foreground = Brushes.White };
         send.Click += (_, _) => { if (list.SelectedItem is DeviceInfo) picker.DialogResult = true; else MessageBox.Show(picker, "请先选择接收设备。"); };
         panel.Children.Add(send);
         panel.Children.Add(list);
@@ -115,9 +181,9 @@ public partial class MainWindow : Window
 
         try
         {
-            ReceiveStatus.Text = $"正在向 {target.Name} 发送文件…";
-            await _transfer.SendFilesAsync(dialog.FileNames, target.Host, target.Port, target.Fingerprint, target.Name);
-            MessageBox.Show(this, $"已成功发送 {dialog.FileNames.Length} 个文件。", "发送完成", MessageBoxButton.OK, MessageBoxImage.Information);
+            ReceiveStatus.Text = $"正在向 {target.Name} 发送 {paths.Count} 个文件…";
+            await _transfer.SendFilesAsync(paths, target.Host, target.Port, target.Fingerprint, target.Name);
+            MessageBox.Show(this, $"已成功发送 {paths.Count} 个文件。", "发送完成", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
