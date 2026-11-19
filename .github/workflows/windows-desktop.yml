@@ -21,3 +21,12 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build WPF application
         run: dotnet build windows/QuanLian.Windows/QuanLian.Windows.csproj --configuration Release
+      - name: Publish Windows x64 application
+        run: dotnet publish windows/QuanLian.Windows/QuanLian.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o windows/publish
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuanLian-Windows-x64
+          path: windows/publish/
+          if-no-files-found: error
+          retention-days: 14
