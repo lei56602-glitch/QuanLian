@@ -20,8 +20,8 @@ public final class TlsIdentity {
     public static boolean plainMode(Context c){return BuildConfig.DEBUG && c.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getBoolean(KEY_PLAIN,false);}
     public static String plainFingerprint(){return "0000000000000000000000000000000000000000000000000000000000000000";}
     private TlsIdentity(){}
-    public static String fingerprint() throws Exception {
-        X509Certificate cert=InMemoryTlsIdentity.get().certificate;
+    public static String fingerprint(Context context) throws Exception {
+        X509Certificate cert=InMemoryTlsIdentity.get(context).certificate;
         return hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
     }
     private static SSLContext context(Context appContext, X509TrustManager trust, boolean useLocalIdentity) throws Exception {
