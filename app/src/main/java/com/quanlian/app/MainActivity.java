@@ -815,9 +815,10 @@ public class MainActivity extends Activity {
   }
   private void attachTvFocus(View view,int accent){
    view.setFocusable(true);view.setFocusableInTouchMode(false);view.setClickable(true);
+   final android.graphics.drawable.Drawable normalBackground=view.getBackground();
    view.setOnFocusChangeListener((v,hasFocus)->{
-    if(hasFocus){GradientDrawable focused=shape(isDarkTheme()?0xff203b60:0xffedf5ff,18);focused.setStroke(dp(3),accent);v.setBackground(focused);v.setElevation(dp(14));v.setScaleX(1.05f);v.setScaleY(1.05f);v.setTranslationZ(dp(8));
-    }else{GradientDrawable normal=shape(isDarkTheme()?0xff14243b:Color.WHITE,18);normal.setStroke(dp(1),isDarkTheme()?0xff34465f:0xffe1eaf6);v.setBackground(normal);v.setElevation(dp(2));v.setScaleX(1f);v.setScaleY(1f);v.setTranslationZ(0);}
+    if(hasFocus){GradientDrawable focused=shape(isDarkTheme()?0xff203b60:0xffedf5ff,18);focused.setStroke(dp(3),accent);v.setBackground(focused);v.setElevation(dp(14));v.setScaleX(1.05f);v.setScaleY(1.05f);v.setTranslationZ(dp(8));if(Build.VERSION.SDK_INT>=28){v.setOutlineAmbientShadowColor(accent);v.setOutlineSpotShadowColor(accent);}
+    }else{v.setBackground(normalBackground);v.setElevation(dp(2));v.setScaleX(1f);v.setScaleY(1f);v.setTranslationZ(0);if(Build.VERSION.SDK_INT>=28){int shadow=isDarkTheme()?0xff000000:0xff64748b;v.setOutlineAmbientShadowColor(shadow);v.setOutlineSpotShadowColor(shadow);}}
    });
    view.setOnKeyListener((v,keyCode,event)->{
     if((keyCode==android.view.KeyEvent.KEYCODE_DPAD_CENTER||keyCode==android.view.KeyEvent.KEYCODE_ENTER||keyCode==android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)){
