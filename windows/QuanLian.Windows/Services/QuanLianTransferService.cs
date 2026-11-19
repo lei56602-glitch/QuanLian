@@ -251,6 +251,8 @@ public sealed class QuanLianTransferService : IAsyncDisposable
         var request = new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
+        var eku = new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") };
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(eku, false));
         var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(365));
         store.Add(cert);
         return new X509Certificate2(cert);
