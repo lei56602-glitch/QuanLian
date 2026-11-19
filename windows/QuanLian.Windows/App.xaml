@@ -1,0 +1,8 @@
+<Application x:Class="QuanLian.Windows.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="BrandBlue" Color="#2878E8"/>
+    <SolidColorBrush x:Key="PageBackground" Color="#F3F7FF"/>
+    <SolidColorBrush x:Key="Ink" Color="#1B2947"/>
+    <SolidColorBrush x:Key="Muted" Color="#8491A8"/>
+  </Application.Resources>
+</Application>
