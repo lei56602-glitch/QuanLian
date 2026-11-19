@@ -567,9 +567,9 @@ public class MainActivity extends Activity {
   String firstName=first.optString("name","文件"),firstUri=first.optString("uri","");
   boolean apk=firstName.toLowerCase(Locale.ROOT).endsWith(".apk");
   StringBuilder message=new StringBuilder("已成功接收 ").append(files.length()).append(" 个文件");
-  if(sender!=null&&!sender.isEmpty())message.append("\\n发送设备：").append(sender);
-  message.append("\\n\\n");
-  for(int x=0;x<files.length()&&x<8;x++){JSONObject f=files.optJSONObject(x);if(f!=null)message.append("• ").append(f.optString("name","文件")).append("\\n");}
+  if(sender!=null&&!sender.isEmpty())message.append("\n发送设备：").append(sender);
+  message.append("\n\\n");
+  for(int x=0;x<files.length()&&x<8;x++){JSONObject f=files.optJSONObject(x);if(f!=null)message.append("• ").append(f.optString("name","文件")).append("\n");}
   if(files.length()>8)message.append("另有 ").append(files.length()-8).append(" 个文件…");
   AlertDialog dialog=new AlertDialog.Builder(this).setTitle("文件接收完成").setMessage(message.toString())
    .setPositiveButton(apk?"安装应用":"打开文件",(d,w)->openReceivedFile(firstUri,firstName))
