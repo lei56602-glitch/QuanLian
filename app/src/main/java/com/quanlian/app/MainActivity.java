@@ -710,29 +710,43 @@ public class MainActivity extends Activity {
    LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
    titles.addView(homeText("发送文件",25,0xff182747,true));gap(titles,4);
    titles.addView(homeText("选择要分享的内容",12,0xff8491a8,false));
-   top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));l.addView(top);gap(l,14);
+   top.addView(titles,new LinearLayout.LayoutParams(0,-2,1));l.addView(top);gap(l,isTvMode()?8:14);
 
    if(uris.isEmpty()){
-    android.widget.GridLayout categories=new android.widget.GridLayout(this);
-    categories.setColumnCount(3);categories.setRowCount(2);categories.setUseDefaultMargins(false);
-    addSendCategory(categories,"▤","文件",()->pick());
-    addSendCategory(categories,"▧","媒体",()->pickMedia());
-    addSendCategory(categories,"▣","剪贴板",()->addClipboardText());
-    addSendCategory(categories,"T","文本",()->createTextFile());
-    addSendCategory(categories,"▱","文件夹",()->pickFolder());
-    addSendCategory(categories,"APK","应用",()->pickApk());
     if(isTvMode()){
-     for(int i=0;i<categories.getChildCount();i++){
-      View card=categories.getChildAt(i);int id=card.getId();
-      int left=i%3>0?categories.getChildAt(i-1).getId():id;
-      int right=i%3<2?categories.getChildAt(i+1).getId():id;
-      int up=i>=3?categories.getChildAt(i-3).getId():id;
-      int down=i<3?categories.getChildAt(i+3).getId():id;
-      card.setNextFocusLeftId(left);card.setNextFocusRightId(right);
-      card.setNextFocusUpId(up);card.setNextFocusDownId(down);
+     LinearLayout categories=new LinearLayout(this);categories.setOrientation(LinearLayout.VERTICAL);
+     LinearLayout rowOne=new LinearLayout(this);rowOne.setOrientation(LinearLayout.HORIZONTAL);
+     LinearLayout rowTwo=new LinearLayout(this);rowTwo.setOrientation(LinearLayout.HORIZONTAL);
+     addSendCategory(rowOne,"▤","文件",()->pick());
+     addSendCategory(rowOne,"▧","媒体",()->pickMedia());
+     addSendCategory(rowOne,"▣","剪贴板",()->addClipboardText());
+     addSendCategory(rowTwo,"T","文本",()->createTextFile());
+     addSendCategory(rowTwo,"▱","文件夹",()->pickFolder());
+     addSendCategory(rowTwo,"APK","应用",()->pickApk());
+     for(int i=0;i<3;i++){
+      View upper=rowOne.getChildAt(i),lower=rowTwo.getChildAt(i);
+      upper.setNextFocusLeftId(i>0?rowOne.getChildAt(i-1).getId():upper.getId());
+      upper.setNextFocusRightId(i<2?rowOne.getChildAt(i+1).getId():upper.getId());
+      upper.setNextFocusDownId(lower.getId());upper.setNextFocusUpId(upper.getId());
+      lower.setNextFocusLeftId(i>0?rowTwo.getChildAt(i-1).getId():lower.getId());
+      lower.setNextFocusRightId(i<2?rowTwo.getChildAt(i+1).getId():lower.getId());
+      lower.setNextFocusUpId(upper.getId());lower.setNextFocusDownId(lower.getId());
      }
+     categories.addView(rowOne,new LinearLayout.LayoutParams(-1,dp(112)));
+     gap(categories,7);
+     categories.addView(rowTwo,new LinearLayout.LayoutParams(-1,dp(112)));
+     l.addView(categories,new LinearLayout.LayoutParams(-1,-2));
+    }else{
+     android.widget.GridLayout categories=new android.widget.GridLayout(this);
+     categories.setColumnCount(3);categories.setRowCount(2);categories.setUseDefaultMargins(false);
+     addSendCategory(categories,"▤","文件",()->pick());
+     addSendCategory(categories,"▧","媒体",()->pickMedia());
+     addSendCategory(categories,"▣","剪贴板",()->addClipboardText());
+     addSendCategory(categories,"T","文本",()->createTextFile());
+     addSendCategory(categories,"▱","文件夹",()->pickFolder());
+     addSendCategory(categories,"APK","应用",()->pickApk());
+     l.addView(categories,new LinearLayout.LayoutParams(-1,-2));
     }
-    l.addView(categories,new LinearLayout.LayoutParams(-1,-2));
    }else{
     LinearLayout preview=homeCard();
     LinearLayout previewHead=new LinearLayout(this);previewHead.setGravity(Gravity.CENTER_VERTICAL);
@@ -853,6 +867,13 @@ public class MainActivity extends Activity {
    AdaptiveFeatureCard tile=new AdaptiveFeatureCard(label,action);
    if(isTvMode())tile.setId(View.generateViewId());
    android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(isTvMode()?108:88);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(isTvMode()?5:4),dp(4),dp(isTvMode()?5:4),dp(4));grid.addView(tile,p);
+  }
+  private void addSendCategory(LinearLayout row,String symbol,String label,Runnable action){
+   AdaptiveFeatureCard tile=new AdaptiveFeatureCard(label,action);
+   tile.setId(View.generateViewId());
+   LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-1,1f);
+   p.setMargins(dp(5),dp(4),dp(5),dp(4));
+   row.addView(tile,p);
   }
   private void pickMedia(){
    Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");
