@@ -24,10 +24,10 @@ public final class TlsIdentity {
         X509Certificate cert=InMemoryTlsIdentity.get().certificate;
         return hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
     }
-    private static SSLContext context(X509TrustManager trust, boolean useLocalIdentity) throws Exception {
+    private static SSLContext context(Context appContext, X509TrustManager trust, boolean useLocalIdentity) throws Exception {
         KeyManager[] keyManagers=null;
         if(useLocalIdentity) {
-            InMemoryTlsIdentity identity=InMemoryTlsIdentity.get(context);
+            InMemoryTlsIdentity identity=InMemoryTlsIdentity.get(appContext);
             keyManagers=new KeyManager[]{identity.keyManager};
             android.util.Log.i("QuanLianTLS","Server identity pinned in memory; keyAlgorithm="
                 +identity.keyPair.getPrivate().getAlgorithm()+", keyBits=2048"
@@ -47,7 +47,7 @@ public final class TlsIdentity {
             android.util.Log.w("QuanLianPlain","DIAGNOSTIC PLAIN MODE: listening on 0.0.0.0:"+plain.getLocalPort()+" WITHOUT TLS");
             return plain;
         }
-        SSLServerSocket server=(SSLServerSocket)context(null,true).getServerSocketFactory().createServerSocket();
+        SSLServerSocket server=(SSLServerSocket)context(context,null,true).getServerSocketFactory().createServerSocket();
         server.setReuseAddress(true);
         // Request a larger TCP receive window for high-throughput local Wi-Fi transfers.
         server.setReceiveBufferSize(4*1024*1024);
@@ -196,7 +196,7 @@ public final class TlsIdentity {
         if(expectedFingerprint==null||!expectedFingerprint.matches("(?i)[0-9a-f]{64}"))
             throw new SSLPeerUnverifiedException("缺少有效的设备自签名证书指纹");
         X509TrustManager selectedTrust = new PinnedTrustManager(expectedFingerprint);
-        SSLContext sslContext=context(selectedTrust,false);
+        SSLContext sslContext=context(context,selectedTrust,false);
         SSLSocket socket=(SSLSocket)sslContext.getSocketFactory().createSocket();
         try{
             // Request larger kernel TCP windows; Android may clamp these to device limits.
