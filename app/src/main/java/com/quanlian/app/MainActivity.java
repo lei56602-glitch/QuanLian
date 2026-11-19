@@ -378,7 +378,7 @@ public class MainActivity extends Activity {
     receiveDialog.show();
    }
   }};
-  IntentFilter f=new IntentFilter();f.addAction(ReceiveForegroundService.ACTION_STATUS);f.addAction(ReceiveForegroundService.ACTION_INCOMING);
+  IntentFilter f=new IntentFilter();f.addAction(ReceiveForegroundService.ACTION_STATUS);f.addAction(ReceiveForegroundService.ACTION_INCOMING);f.addAction(ReceiveForegroundService.ACTION_COMPLETE);
   if(Build.VERSION.SDK_INT>=33)registerReceiver(receiveReceiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiveReceiver,f);
  }
  private void unregisterReceiveReceiver(){if(receiveReceiver!=null){try{unregisterReceiver(receiveReceiver);}catch(Exception ignored){}receiveReceiver=null;}}
