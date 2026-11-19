@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
  private ProgressDialog sendProgress; private BroadcastReceiver sendReceiver, receiveReceiver; private Device retryDevice;
  static class Device { String name,key,fingerprint; InetAddress host; int port; long udpLastSeen; boolean udpSeen,nsdSeen; Device(String n,String k,InetAddress h,int p,String fp){name=n;key=k;host=h;port=p;fingerprint=fp;} }
  private int dp(float x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
+ private boolean isTvMode(){return getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE;}
  private int pageBackground(){return isDarkTheme()?0xff101827:0xfff5f8ff;}
  private boolean isDarkTheme(){String mode=getSharedPreferences("ui_settings",MODE_PRIVATE).getString("theme","system");if("dark".equals(mode))return true;if("light".equals(mode))return false;return (getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES;}
  private int surfaceColor(){return isDarkTheme()?0xff1b2739:Color.WHITE;}
@@ -186,8 +187,7 @@ public class MainActivity extends Activity {
  private Button btn(String s,int c){if(c==0xff2878f5||c==0xff1f77dc)c=accentColor();Button b=new Button(this);b.setText(ui(s));b.setTextColor(-1);b.setAllCaps(false);b.setTextSize(16);b.setBackground(focusBackground(c,0xff2869a5,16));b.setMinHeight(dp(54));b.setFocusable(true);b.setFocusableInTouchMode(false);return b;}
  private void install(LinearLayout l){int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);ScrollView s=new ScrollView(this);s.setFillViewport(true);s.setFocusable(false);if(widthDp>=700){FrameLayout frame=new FrameLayout(this);FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.min(widthDp,1200)*((int)getResources().getDisplayMetrics().density),-1,Gravity.CENTER);s.addView(l,new ScrollView.LayoutParams(-1,-2));frame.addView(s,p);setContentView(frame);}else{s.addView(l);setContentView(s);}if(widthDp>=700){l.setPadding(dp(32),dp(28),dp(32),dp(28));}final int baseLeft=l.getPaddingLeft(),baseTop=l.getPaddingTop(),baseRight=l.getPaddingRight(),baseBottom=l.getPaddingBottom();l.setOnApplyWindowInsetsListener((v,insets)->{int top=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.statusBars()).top:insets.getSystemWindowInsetTop();v.setPadding(baseLeft,baseTop+top,baseRight,baseBottom);return insets;});l.requestApplyInsets();l.post(()->{ArrayList<View> focusables=l.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty()&&!focusables.get(0).hasFocus())focusables.get(0).requestFocus();});}
   private void installFlow(LinearLayout content,int selected){
-   int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
-   boolean landscapeRail=widthDp>=600;
+   boolean landscapeRail=isTvMode();
    LinearLayout root=new LinearLayout(this);
    root.setOrientation(landscapeRail?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);
    root.setBackgroundColor(pageBackground());
@@ -211,7 +211,9 @@ public class MainActivity extends Activity {
     int right=Build.VERSION.SDK_INT>=30?insets.getInsets(android.view.WindowInsets.Type.systemBars()).right:insets.getSystemWindowInsetRight();
     v.setPadding(left,top,right,bottom);return insets;
    });
+   root.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
    setContentView(root);root.requestApplyInsets();
+   if(landscapeRail)root.post(()->{ArrayList<View> focusables=root.getFocusables(View.FOCUS_FORWARD);if(!focusables.isEmpty())focusables.get(0).requestFocus();});
   }
   private LinearLayout flowNav(int selected,boolean vertical){
    LinearLayout nav=new LinearLayout(this);
@@ -241,7 +243,9 @@ public class MainActivity extends Activity {
     item.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));
     TextView label=homeText(labels[i],14,i==selected?accentColor():(isDarkTheme()?0xffd0d9e8:0xff66758d),i==selected);
     LinearLayout.LayoutParams labelLp=new LinearLayout.LayoutParams(-2,-2);labelLp.leftMargin=dp(12);item.addView(label,labelLp);
+    item.setFocusable(isTvMode());item.setClickable(true);
     item.setOnClickListener(v->{if(index==0)receivePage();else if(index==1)sendPage();else settingsPage();});
+    if(isTvMode())attachTvFocus(item,accentColor());
     if(vertical){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);nav.addView(item,p);}
     else nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
    }
@@ -627,7 +631,7 @@ public class MainActivity extends Activity {
  private TextView homeText(String value,int size,int color,boolean bold){if(isDarkTheme()){if(color==0xff1b2947||color==0xff182747||color==0xff263957||color==0xff17264a)color=0xffedf3ff;else if(color==0xff8491a8||color==0xff71809e||color==0xff8190a8||color==0xff91a0b5)color=0xffaab7ca;}if(color==0xff1769e8||color==0xff2878f5)color=accentColor();TextView t=txt(value,size,color,bold);t.setIncludeFontPadding(false);return t;}
  private LinearLayout homeCard(){LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(17),dp(16),dp(17),dp(16));GradientDrawable bg=shape(surfaceColor(),22);bg.setStroke(dp(1),isDarkTheme()?0xff2c3b52:0xffe8eef8);c.setBackground(bg);c.setElevation(dp(2));return c;}
  private GradientDrawable homeGradient(int start,int end,int radius){GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{start,end});d.setCornerRadius(dp(radius));return d;}
- private void homeNavItem(LinearLayout nav,String label,boolean selected,Runnable action){TextView t=homeText(label,14,selected?0xff1769e8:0xff62718c,selected);t.setGravity(Gravity.CENTER_VERTICAL);t.setPadding(dp(14),dp(13),dp(14),dp(13));t.setBackground(selected?shape(0xffedf4ff,14):shape(Color.TRANSPARENT,14));t.setOnClickListener(v->action.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(7);nav.addView(t,p);}
+ private void homeNavItem(LinearLayout nav,String label,boolean selected,Runnable action){TextView t=homeText(label,14,selected?0xff1769e8:0xff62718c,selected);t.setGravity(Gravity.CENTER_VERTICAL);t.setPadding(dp(14),dp(13),dp(14),dp(13));t.setBackground(selected?shape(0xffedf4ff,14):shape(Color.TRANSPARENT,14));t.setFocusable(isTvMode());t.setClickable(true);t.setOnClickListener(v->action.run());if(isTvMode())attachTvFocus(t,selected?0xff2878f5:accentColor());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(7);nav.addView(t,p);}
  private TextView homeNavLabel(String label,boolean selected){TextView t=homeText(label,12,selected?0xff315b91:0xff74839a,selected);t.setGravity(Gravity.CENTER);t.setPadding(dp(5),dp(13),dp(5),dp(13));t.setBackground(selected?shape(0xffedf4ff,18):shape(Color.TRANSPARENT,18));return t;}
  private void home(){receivePage();}
  private Spinner settingSpinner(LinearLayout card,String label,String[] values,int selected){card.addView(homeText(label,15,0xff1b2947,true));gap(card,6);Spinner spinner=new Spinner(this);String[] translated=values.clone();for(int i=0;i<translated.length;i++)translated[i]=ui(translated[i]);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,translated);spinner.setAdapter(adapter);spinner.setSelection(Math.max(0,Math.min(selected,values.length-1)));card.addView(spinner);gap(card,12);return spinner;}
@@ -710,7 +714,7 @@ public class MainActivity extends Activity {
 
    if(uris.isEmpty()){
     android.widget.GridLayout categories=new android.widget.GridLayout(this);
-    categories.setColumnCount(3);categories.setUseDefaultMargins(false);
+    categories.setColumnCount(isTvMode()?6:3);categories.setUseDefaultMargins(false);
     addSendCategory(categories,"▤","文件",()->pick());
     addSendCategory(categories,"▧","媒体",()->pickMedia());
     addSendCategory(categories,"▣","剪贴板",()->addClipboardText());
@@ -801,6 +805,26 @@ public class MainActivity extends Activity {
    target.addView(deviceList);l.addView(target);refreshDevices();
    installFlow(l,1);
   }
+  private void attachTvFocus(View view,int accent){
+   view.setFocusable(true);view.setFocusableInTouchMode(false);view.setClickable(true);
+   view.setOnFocusChangeListener((v,hasFocus)->{
+    if(hasFocus){GradientDrawable focused=shape(isDarkTheme()?0xff203b60:0xffedf5ff,18);focused.setStroke(dp(3),accent);v.setBackground(focused);v.setElevation(dp(14));v.setScaleX(1.05f);v.setScaleY(1.05f);v.setTranslationZ(dp(8));
+    }else{GradientDrawable normal=shape(isDarkTheme()?0xff14243b:Color.WHITE,18);normal.setStroke(dp(1),isDarkTheme()?0xff34465f:0xffe1eaf6);v.setBackground(normal);v.setElevation(dp(2));v.setScaleX(1f);v.setScaleY(1f);v.setTranslationZ(0);}
+   });
+   view.setOnKeyListener((v,keyCode,event)->{
+    if((keyCode==android.view.KeyEvent.KEYCODE_DPAD_CENTER||keyCode==android.view.KeyEvent.KEYCODE_ENTER||keyCode==android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)){
+     if(event.getAction()==android.view.KeyEvent.ACTION_UP){v.performClick();return true;}return true;
+    }
+    return false;
+   });
+  }
+  private class AdaptiveFeatureCard extends LinearLayout{
+   AdaptiveFeatureCard(String label,Runnable action){super(MainActivity.this);setOrientation(LinearLayout.VERTICAL);setGravity(Gravity.CENTER);setPadding(dp(5),dp(isTvMode()?8:10),dp(5),dp(isTvMode()?8:10));setBackground(shape(surfaceColor(),18));setElevation(dp(2));setFocusable(isTvMode());setClickable(true);
+    SendCategoryIcon icon=new SendCategoryIcon(MainActivity.this,label);addView(icon,new LinearLayout.LayoutParams(dp(isTvMode()?26:30),dp(isTvMode()?26:30)));gap(this,isTvMode()?5:7);
+    TextView title=homeText(label,isTvMode()?12:14,isDarkTheme()?0xffe7edf7:0xff263957,true);title.setGravity(Gravity.CENTER);addView(title,new LinearLayout.LayoutParams(-1,-2));
+    setOnClickListener(v->action.run());if(isTvMode())attachTvFocus(this,accentColor());
+   }
+  }
   private class SendCategoryIcon extends View{
    private final String kind;private final android.graphics.Paint p=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
    SendCategoryIcon(Context c,String k){super(c);kind=k;}
@@ -814,11 +838,8 @@ public class MainActivity extends Activity {
    }
   }
   private void addSendCategory(android.widget.GridLayout grid,String symbol,String label,Runnable action){
-   LinearLayout tile=homeCard();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(6),dp(10),dp(6),dp(10));tile.setBackground(focusBackground(surfaceColor(),isDarkTheme()?0xff263d60:0xffe8f1ff,18));tile.setFocusable(true);tile.setClickable(true);
-   SendCategoryIcon icon=new SendCategoryIcon(this,label);tile.addView(icon,new LinearLayout.LayoutParams(dp(30),dp(30)));gap(tile,7);
-   TextView title=homeText(label,14,isDarkTheme()?0xffe7edf7:0xff263957,true);title.setGravity(Gravity.CENTER);tile.addView(title);
-   tile.setOnClickListener(v->action.run());
-   android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(88);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(4),dp(4),dp(4),dp(4));grid.addView(tile,p);
+   AdaptiveFeatureCard tile=new AdaptiveFeatureCard(label,action);
+   android.widget.GridLayout.LayoutParams p=new android.widget.GridLayout.LayoutParams();p.width=0;p.height=dp(isTvMode()?108:88);p.columnSpec=android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED,1f);p.setMargins(dp(isTvMode()?5:4),dp(4),dp(isTvMode()?5:4),dp(4));grid.addView(tile,p);
   }
   private void pickMedia(){
    Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");
@@ -957,7 +978,7 @@ public class MainActivity extends Activity {
   page=3;deviceList=null;deviceStatus=null;
   applyWindowTheme();
   int widthDp=(int)(getResources().getDisplayMetrics().widthPixels/getResources().getDisplayMetrics().density);
-  boolean wide=widthDp>=600;
+  boolean wide=isTvMode();
   LinearLayout l=col();l.setBackgroundColor(pageBackground());
   l.setGravity(Gravity.CENTER_HORIZONTAL);
   if(wide)l.setPadding(dp(28),dp(12),dp(28),dp(12));
