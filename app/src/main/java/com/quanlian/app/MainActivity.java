@@ -356,7 +356,9 @@ public class MainActivity extends Activity {
   if(receiveReceiver!=null)return;
   receiveReceiver=new BroadcastReceiver(){@Override public void onReceive(Context c,Intent i){
    if(i==null)return;
-   if(ReceiveForegroundService.ACTION_STATUS.equals(i.getAction())){
+   if(ReceiveForegroundService.ACTION_COMPLETE.equals(i.getAction())){
+    showReceiveCompleteDialog(i);
+   }else if(ReceiveForegroundService.ACTION_STATUS.equals(i.getAction())){
     port=i.getIntExtra(ReceiveForegroundService.EXTRA_PORT,port);
     if(receiveStatus!=null){String t=i.getStringExtra(ReceiveForegroundService.EXTRA_TEXT);receiveStatus.setText(t==null?"接收服务运行中":t);}
    }else if(ReceiveForegroundService.ACTION_INCOMING.equals(i.getAction())){
@@ -555,6 +557,44 @@ public class MainActivity extends Activity {
     Intent view=new Intent(Intent.ACTION_VIEW);view.setDataAndType(uri,actual);view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(view);
    }
   }catch(Exception e){Toast.makeText(this,"无法打开文件："+e.getMessage(),Toast.LENGTH_LONG).show();}
+ }
+ private void showReceiveCompleteDialog(Intent event){
+  String sender=event.getStringExtra(ReceiveForegroundService.EXTRA_SENDER);
+  String raw=event.getStringExtra(ReceiveForegroundService.EXTRA_FILES);
+  JSONArray files;try{files=new JSONArray(raw==null?"[]":raw);}catch(Exception e){files=new JSONArray();}
+  if(files.length()==0)return;
+  JSONObject first=files.optJSONObject(0);if(first==null)return;
+  String firstName=first.optString("name","文件"),firstUri=first.optString("uri","");
+  boolean apk=firstName.toLowerCase(Locale.ROOT).endsWith(".apk");
+  StringBuilder message=new StringBuilder("已成功接收 ").append(files.length()).append(" 个文件");
+  if(sender!=null&&!sender.isEmpty())message.append("\\n发送设备：").append(sender);
+  message.append("\\n\\n");
+  for(int x=0;x<files.length()&&x<8;x++){JSONObject f=files.optJSONObject(x);if(f!=null)message.append("• ").append(f.optString("name","文件")).append("\\n");}
+  if(files.length()>8)message.append("另有 ").append(files.length()-8).append(" 个文件…");
+  AlertDialog dialog=new AlertDialog.Builder(this).setTitle("文件接收完成").setMessage(message.toString())
+   .setPositiveButton(apk?"安装应用":"打开文件",(d,w)->openReceivedFile(firstUri,firstName))
+   .setNeutralButton("打开接收目录",(d,w)->openReceiveFolder())
+   .setNegativeButton("完成",null).create();
+  dialog.setOnShowListener(d->{
+   Button open=dialog.getButton(AlertDialog.BUTTON_POSITIVE),folder=dialog.getButton(AlertDialog.BUTTON_NEUTRAL),done=dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+   if(open!=null){open.setTextColor(Color.WHITE);open.setAllCaps(false);open.setBackground(shape(0xff2878f5,14));}
+   if(folder!=null){folder.setTextColor(0xff2878f5);folder.setAllCaps(false);}
+   if(done!=null){done.setTextColor(0xff71809e);done.setAllCaps(false);}
+  });
+  if(!isFinishing())dialog.show();
+ }
+ private void openReceiveFolder(){
+  try{
+   Intent view=new Intent(Intent.ACTION_VIEW);
+   view.setDataAndType(android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents","primary:Download/小李全联"),"vnd.android.document/directory");
+   view.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+   try{startActivity(view);return;}catch(Exception ignored){}
+   Intent tree=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+   tree.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+   tree.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+    android.provider.DocumentsContract.buildTreeDocumentUri("com.android.externalstorage.documents","primary:Download/小李全联"));
+   startActivityForResult(tree,1044);
+  }catch(Exception e){Toast.makeText(this,"无法打开接收目录，请使用文件管理器进入 Download/小李全联",Toast.LENGTH_LONG).show();}
  }
  private void handleIncomingShare(Intent intent){
   if(intent==null)return;String action=intent.getAction();int before=uris.size();
