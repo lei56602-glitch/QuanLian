@@ -224,7 +224,7 @@ public class MainActivity extends Activity {
     brand.addView(mark,new LinearLayout.LayoutParams(dp(58),dp(58)));
     TextView name=homeText("小李全联",18,isDarkTheme()?Color.WHITE:0xff182747,true);name.setGravity(Gravity.CENTER);
     LinearLayout.LayoutParams nameLp=new LinearLayout.LayoutParams(-1,-2);nameLp.topMargin=dp(10);brand.addView(name,nameLp);
-    nav.addView(brand);gap(nav,dp(34));
+    nav.addView(brand);gap(nav,34);
    }
    String[] labels={"接收","发送","设置"};
    String[] glyphs={"receive","send","settings"};
