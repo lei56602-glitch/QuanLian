@@ -116,13 +116,23 @@ public sealed class QuanLianTransferService : IAsyncDisposable
                     var file = files[i];
                     var safeName = SanitizeFileName(file.Name);
                     var destination = UniquePath(directory, safeName);
-                    var temp = destination + ".quanlian.part";
-                    await JavaWire.WriteInt64Async(ssl, 0, token); // Windows currently starts a fresh transfer; Android accepts offset zero.
+                    var senderKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(senderId))).ToLowerInvariant()[..16];
+                    var temp = Path.Combine(directory, $".quanlian_{senderKey}_{file.Sha256}.part");
+                    if (File.Exists(temp) && new FileInfo(temp).Length > file.Size) File.Delete(temp);
+                    var offset = File.Exists(temp) ? new FileInfo(temp).Length : 0L;
                     using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                    await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize,
+                    if (offset > 0)
+                    {
+                        await using var prior = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                        var priorBuffer = new byte[ChunkSize];
+                        int priorRead;
+                        while ((priorRead = await prior.ReadAsync(priorBuffer, token)) > 0) sha.AppendData(priorBuffer, 0, priorRead);
+                    }
+                    await JavaWire.WriteInt64Async(ssl, offset, token);
+                    await using (var output = new FileStream(temp, offset == 0 ? FileMode.Create : FileMode.Append, FileAccess.Write, FileShare.None, ChunkSize,
                                      FileOptions.Asynchronous | FileOptions.SequentialScan))
                     {
-                        long remaining = file.Size;
+                        long remaining = file.Size - offset;
                         while (remaining > 0)
                         {
                             long batch = 0;
@@ -139,7 +149,7 @@ public sealed class QuanLianTransferService : IAsyncDisposable
                                 batch += length;
                             }
                             await output.FlushAsync(token);
-                            await output.FlushAsync(token);
+                            output.Flush(true);
                             await JavaWire.WriteInt64Async(ssl, file.Size - remaining, token);
                         }
                         output.Flush(true);
@@ -209,10 +219,11 @@ public sealed class QuanLianTransferService : IAsyncDisposable
             foreach (var file in files)
             {
                 var offset = await JavaWire.ReadInt64Async(ssl, token);
-                if (offset != 0 || offset > file.Size) throw new InvalidDataException("接收端续传位置无效。");
+                if (offset < 0 || offset > file.Size) throw new InvalidDataException("接收端续传位置无效。");
                 await using var input = new FileStream(file.Path, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                input.Seek(offset, SeekOrigin.Begin);
                 var buffer = new byte[ChunkSize];
-                long remaining = file.Size;
+                long remaining = file.Size - offset;
                 while (remaining > 0)
                 {
                     long batch = 0;
